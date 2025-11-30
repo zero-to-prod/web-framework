@@ -91,6 +91,7 @@ class WebFramework
      * @param  array  $serverTarget
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function setServerTarget(array &$serverTarget): WebFramework
     {
@@ -103,6 +104,7 @@ class WebFramework
      * @param  callable(array $envTarget, array $serverTarget): array  $definition
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function handleRoutes(callable $definition): WebFramework
     {

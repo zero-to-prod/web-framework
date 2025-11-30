@@ -266,6 +266,7 @@ class HandleRoute
      * Check if a route has been matched.
      *
      * @return bool
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function hasMatched(): bool
     {
@@ -276,6 +277,7 @@ class HandleRoute
      * Reset the matched state and re-parse request data.
      *
      * @return HandleRoute  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function reset(): HandleRoute
     {
