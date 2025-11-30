@@ -49,7 +49,7 @@ class WebFramework
      * @param  array|null  $env      array Optional reference to environment array (defaults to $_ENV)
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(string $basePath, array &$env = null)
+    public function __construct(string $basePath, ?array &$env = null)
     {
         $this->basePath = $basePath;
         $this->env = &$env;
