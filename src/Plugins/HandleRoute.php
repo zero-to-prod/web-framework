@@ -274,7 +274,7 @@ class HandleRoute
     }
 
     /**
-     * Reset the matched state and re-parse request data.
+     * Reset the matched state and reparse request data.
      *
      * @return HandleRoute  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
