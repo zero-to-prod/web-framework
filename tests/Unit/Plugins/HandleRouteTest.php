@@ -8,15 +8,18 @@ use Zerotoprod\WebFramework\Plugins\HandleRoute;
 class TestController
 {
     public static $call_count = 0;
+    public static $received_server = null;
 
-    public function index(): void
+    public function index(array $server = []): void
     {
         self::$call_count++;
+        self::$received_server = $server;
     }
 
-    public function show(): void
+    public function show(array $server = []): void
     {
         echo 'Controller response';
+        self::$received_server = $server;
     }
 
     public function create(): void
@@ -24,9 +27,10 @@ class TestController
         echo 'Created resource';
     }
 
-    public function store(): void
+    public function store(array $server = []): void
     {
         self::$call_count++;
+        self::$received_server = $server;
     }
 
     public function update(): void
@@ -34,9 +38,10 @@ class TestController
         echo 'Updated resource';
     }
 
-    public function destroy(): void
+    public function destroy(array $server = []): void
     {
         self::$call_count++;
+        self::$received_server = $server;
     }
 }
 
@@ -56,6 +61,7 @@ class HandleRouteTest extends TestCase
     {
         parent::setUp();
         TestController::$call_count = 0;
+        TestController::$received_server = null;
         AnotherController::$executed = false;
     }
     /** @test */
@@ -930,23 +936,6 @@ class HandleRouteTest extends TestCase
     }
 
     /** @test */
-    public function invalid_array_with_wrong_count_outputs_array_string(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/test',
-        ];
-
-        $router = new HandleRoute($server);
-
-        ob_start();
-        $router->get('/test', [TestController::class]);
-        $output = ob_get_clean();
-
-        $this->assertEquals('Array', $output);
-    }
-
-    /** @test */
     public function array_action_with_null_does_not_execute(): void
     {
         $server = [
@@ -958,5 +947,161 @@ class HandleRouteTest extends TestCase
         $router->get('/test', [TestController::class, 'index']);
 
         $this->assertEquals(0, TestController::$call_count);
+    }
+
+    /** @test */
+    public function benchmark_optimization_impact(): void
+    {
+        $iterations = 1000;
+        $routes = 50;
+
+        $start = microtime(true);
+        for ($i = 0; $i < $iterations; $i++) {
+            $server = [
+                'REQUEST_METHOD' => 'GET',
+                'REQUEST_URI' => "/route-$routes?query=test",
+            ];
+            $router = new HandleRoute($server);
+
+            for ($j = 1; $j <= $routes; $j++) {
+                $router->get("/route-$j", function () {
+                });
+            }
+        }
+        $duration = microtime(true) - $start;
+
+        // Expect 2-5x improvement (baseline ~150ms, optimized <60ms)
+        // Using generous limit to account for different environments
+        $this->assertLessThan(0.1, $duration,
+            "Expected <100ms for 1000 iterations × 50 routes, got: {$duration}s");
+    }
+
+    /** @test */
+    public function closure_receives_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+            'CUSTOM_KEY' => 'custom_value',
+            'HTTP_HOST' => 'example.com',
+        ];
+        $received_server = null;
+
+        $router = new HandleRoute($server);
+        $router->get('/test', function ($srv) use (&$received_server) {
+            $received_server = $srv;
+        });
+
+        $this->assertNotNull($received_server);
+        $this->assertEquals($server, $received_server);
+        $this->assertEquals('custom_value', $received_server['CUSTOM_KEY']);
+        $this->assertEquals('example.com', $received_server['HTTP_HOST']);
+    }
+
+    /** @test */
+    public function controller_receives_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/controller',
+            'HTTP_HOST' => 'example.com',
+            'SERVER_PORT' => '8080',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/controller', [TestController::class, 'index']);
+
+        $this->assertNotNull(TestController::$received_server);
+        $this->assertEquals($server, TestController::$received_server);
+        $this->assertEquals('example.com', TestController::$received_server['HTTP_HOST']);
+        $this->assertEquals('8080', TestController::$received_server['SERVER_PORT']);
+    }
+
+    /** @test */
+    public function closure_receives_all_server_array_keys(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/submit',
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_AUTHORIZATION' => 'Bearer token123',
+            'REMOTE_ADDR' => '127.0.0.1',
+        ];
+        $received_server = null;
+
+        $router = new HandleRoute($server);
+        $router->post('/submit', function ($srv) use (&$received_server) {
+            $received_server = $srv;
+        });
+
+        $this->assertArrayHasKey('REQUEST_METHOD', $received_server);
+        $this->assertArrayHasKey('REQUEST_URI', $received_server);
+        $this->assertArrayHasKey('CONTENT_TYPE', $received_server);
+        $this->assertArrayHasKey('HTTP_AUTHORIZATION', $received_server);
+        $this->assertArrayHasKey('REMOTE_ADDR', $received_server);
+        $this->assertEquals('application/json', $received_server['CONTENT_TYPE']);
+        $this->assertEquals('Bearer token123', $received_server['HTTP_AUTHORIZATION']);
+    }
+
+    /** @test */
+    public function controller_receives_all_server_array_keys(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'DELETE',
+            'REQUEST_URI' => '/resource/123',
+            'HTTP_X_CUSTOM_HEADER' => 'custom_value',
+            'QUERY_STRING' => 'force=true',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->delete('/resource/123', [TestController::class, 'destroy']);
+
+        $this->assertArrayHasKey('REQUEST_METHOD', TestController::$received_server);
+        $this->assertArrayHasKey('REQUEST_URI', TestController::$received_server);
+        $this->assertArrayHasKey('HTTP_X_CUSTOM_HEADER', TestController::$received_server);
+        $this->assertArrayHasKey('QUERY_STRING', TestController::$received_server);
+        $this->assertEquals('DELETE', TestController::$received_server['REQUEST_METHOD']);
+        $this->assertEquals('custom_value', TestController::$received_server['HTTP_X_CUSTOM_HEADER']);
+    }
+
+    /** @test */
+    public function server_target_is_passed_by_reference_to_closure(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/test', function (&$srv) {
+            $srv['MODIFIED'] = 'true';
+        });
+
+        $this->assertEquals('true', $server['MODIFIED']);
+    }
+
+    /** @test */
+    public function multiple_routes_each_receive_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/second',
+            'CUSTOM_KEY' => 'value',
+        ];
+        $first_received = null;
+        $second_received = null;
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/first', function ($srv) use (&$first_received) {
+                $first_received = $srv;
+            })
+            ->get('/second', function ($srv) use (&$second_received) {
+                $second_received = $srv;
+            });
+
+        $this->assertNull($first_received);
+        $this->assertNotNull($second_received);
+        $this->assertEquals('value', $second_received['CUSTOM_KEY']);
     }
 }

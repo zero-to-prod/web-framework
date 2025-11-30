@@ -47,12 +47,16 @@ class HandleRoute
     public function __construct(array &$serverTarget)
     {
         $this->serverTarget = &$serverTarget;
+
+        $this->request_method = $serverTarget['REQUEST_METHOD'] ?? '';
+        $request_uri = $serverTarget['REQUEST_URI'] ?? '';
+        $this->request_path = strtok($request_uri, '?');
     }
 
     /**
      * Define a GET route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -67,7 +71,7 @@ class HandleRoute
     /**
      * Define a POST route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -82,7 +86,7 @@ class HandleRoute
     /**
      * Define a PUT route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -97,7 +101,7 @@ class HandleRoute
     /**
      * Define a PATCH route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -112,7 +116,7 @@ class HandleRoute
     /**
      * Define a DELETE route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -127,7 +131,7 @@ class HandleRoute
     /**
      * Define an OPTIONS route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -142,7 +146,7 @@ class HandleRoute
     /**
      * Define a HEAD route.
      *
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -157,8 +161,8 @@ class HandleRoute
     /**
      * Match a route and execute action if matches current request.
      *
-     * @param  string  $method  The HTTP method to match
-     * @param  string  $uri  The URI pattern to match
+     * @param  string                      $method  The HTTP method to match
+     * @param  string                      $uri     The URI pattern to match
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
@@ -169,44 +173,28 @@ class HandleRoute
             return $this;
         }
 
-        $request_method = $this->serverTarget['REQUEST_METHOD'] ?? '';
-        $request_uri = $this->serverTarget['REQUEST_URI'] ?? '';
-
-        $request_uri = strtok($request_uri, '?');
-
-        if ($request_method === $method && $request_uri === $uri) {
+        if ($this->request_method === $method && $this->request_path === $uri) {
             $this->route_matched = true;
-            $this->execute($action);
+            if ($action === null) {
+                return $this;
+            }
+
+            if (is_array($action)) {
+                if (count($action) === 2) {
+                    call_user_func([new $action[0](), $action[1]], $this->serverTarget);
+                }
+
+                return $this;
+            }
+
+            if (is_callable($action)) {
+                $action($this->serverTarget);
+            } else {
+                echo $action;
+            }
         }
 
         return $this;
-    }
-
-    /**
-     * Execute the action for a matched route.
-     *
-     * @param  callable|array|string|null  $action  The action to execute
-     *
-     * @return void
-     */
-    private function execute($action): void
-    {
-        if ($action === null) {
-            return;
-        }
-
-        if (is_array($action) && count($action) === 2) {
-            $class = $action[0];
-            $method = $action[1];
-            (new $class())->$method();
-            return;
-        }
-
-        if (is_callable($action)) {
-            $action();
-        } else {
-            echo $action;
-        }
     }
 
     /**
@@ -220,13 +208,17 @@ class HandleRoute
     }
 
     /**
-     * Reset the matched state.
+     * Reset the matched state and re-parse request data.
      *
      * @return HandleRoute  Returns $this for method chaining
      */
     public function reset(): HandleRoute
     {
         $this->route_matched = false;
+
+        $this->request_method = $this->serverTarget['REQUEST_METHOD'] ?? '';
+        $request_uri = $this->serverTarget['REQUEST_URI'] ?? '';
+        $this->request_path = strtok($request_uri, '?');
 
         return $this;
     }
