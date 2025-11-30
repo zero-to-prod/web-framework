@@ -29,6 +29,19 @@
         - [Plugin System](#plugin-system)
         - [Immutable Environment Variables](#immutable-environment-variables)
         - [Order Independence](#order-independence)
+    - [HTTP Routing](#http-routing)
+        - [Overview](#overview-1)
+        - [Quick Start](#quick-start-1)
+        - [Supported HTTP Methods](#supported-http-methods)
+        - [Action Types](#action-types)
+        - [Accessing Request Data](#accessing-request-data)
+        - [Method Chaining](#method-chaining-1)
+        - [Route Matching](#route-matching)
+        - [Checking for Matches](#checking-for-matches)
+        - [Resetting Router State](#resetting-router-state)
+        - [Advanced: Duplicate Routes](#advanced-duplicate-routes)
+        - [Performance Characteristics](#performance-characteristics)
+        - [Complete Example](#complete-example)
 - [Local Development](./LOCAL_DEVELOPMENT.md)
 - [Contributing](#contributing)
 
@@ -300,6 +313,273 @@ Configuration methods can be called in any order - only `loadEnv()` executes the
 // These are equivalent:
 $framework->setEnvPath('.env')->setEnvParser(EnvParser::handle())->setEnvBinder(EnvBinderImmutable::handle())->loadEnv();
 $framework->setEnvBinder(EnvBinderImmutable::handle())->setEnvParser(EnvParser::handle())->setEnvPath('.env')->loadEnv();
+```
+
+### HTTP Routing
+
+#### Overview
+
+The `HandleRoute` plugin provides high-performance HTTP routing with **O(1) constant-time route matching** using hash map lookups. This means routing performance remains constant regardless of the number of routes defined - whether you have 10 routes or 10,000 routes.
+
+#### Quick Start
+
+```php
+use Zerotoprod\WebFramework\Plugins\HandleRoute;
+
+// Create router with server array
+$router = new HandleRoute($_SERVER);
+
+// Define routes
+$router->get('/users', function ($server) {
+    echo 'List of users';
+});
+
+$router->post('/users', function ($server) {
+    echo 'Create user';
+});
+
+// Dispatch the matching route
+$router->dispatch();
+```
+
+#### Supported HTTP Methods
+
+The router supports all standard HTTP methods:
+
+```php
+$router->get('/resource', $action);      // GET requests
+$router->post('/resource', $action);     // POST requests
+$router->put('/resource', $action);      // PUT requests
+$router->patch('/resource', $action);    // PATCH requests
+$router->delete('/resource', $action);   // DELETE requests
+$router->options('/resource', $action);  // OPTIONS requests
+$router->head('/resource', $action);     // HEAD requests
+```
+
+#### Action Types
+
+Routes support three types of actions:
+
+##### 1. Closures
+
+```php
+$router->get('/hello', function ($server) {
+    echo "Hello, World!";
+    echo "Request method: " . $server['REQUEST_METHOD'];
+});
+```
+
+##### 2. Controller Arrays
+
+```php
+class UserController {
+    public function index(array $server) {
+        echo "User list";
+    }
+
+    public function show(array $server) {
+        echo "Show user";
+    }
+}
+
+$router->get('/users', [UserController::class, 'index']);
+$router->get('/users/show', [UserController::class, 'show']);
+```
+
+##### 3. String Responses
+
+```php
+$router->get('/status', 'OK');
+$router->get('/version', 'v1.0.0');
+```
+
+#### Accessing Request Data
+
+All actions receive the server array as their first parameter:
+
+```php
+$router->post('/api/data', function ($server) {
+    $method = $server['REQUEST_METHOD'];  // POST
+    $uri = $server['REQUEST_URI'];        // /api/data
+    $host = $server['HTTP_HOST'];         // example.com
+
+    // Access any $_SERVER data
+    if (isset($server['HTTP_AUTHORIZATION'])) {
+        $token = $server['HTTP_AUTHORIZATION'];
+    }
+});
+```
+
+The server array is passed by reference, allowing modifications:
+
+```php
+$router->get('/test', function (&$server) {
+    $server['CUSTOM_DATA'] = 'modified';
+});
+
+echo $_SERVER['CUSTOM_DATA']; // 'modified'
+```
+
+#### Method Chaining
+
+Routes can be defined using method chaining:
+
+```php
+$router = new HandleRoute($_SERVER);
+
+$router
+    ->get('/', 'Home Page')
+    ->get('/about', 'About Us')
+    ->get('/contact', 'Contact')
+    ->post('/contact', function ($server) {
+        echo 'Processing contact form';
+    })
+    ->dispatch();
+```
+
+#### Route Matching
+
+Routes are matched using **exact** method and path comparison:
+
+```php
+// Case-sensitive path matching
+$router->get('/Users', $action);  // Only matches /Users
+$router->get('/users', $action);  // Only matches /users
+
+// Method must match exactly
+$router->get('/data', $action);   // Only matches GET requests
+$router->post('/data', $action);  // Only matches POST requests
+```
+
+Query strings are automatically stripped:
+
+```php
+// Request: GET /search?q=test&page=2
+$router->get('/search', function ($server) {
+    // This route matches!
+    // Access query string via $server['QUERY_STRING']
+});
+```
+
+#### Checking for Matches
+
+```php
+$router->get('/home', function () {
+    echo 'Home page';
+})->dispatch();
+
+if ($router->hasMatched()) {
+    echo 'Route was found and executed';
+} else {
+    echo '404 - Not Found';
+}
+```
+
+#### Resetting Router State
+
+The `reset()` method clears the matched state and re-parses the server array:
+
+```php
+$router = new HandleRoute($_SERVER);
+
+$router->get('/first', function () {
+    echo 'First route';
+})->dispatch();
+
+// Modify the server array
+$_SERVER['REQUEST_URI'] = '/second';
+$router->reset();
+
+// Define and dispatch new route
+$router->get('/second', function () {
+    echo 'Second route';
+})->dispatch();
+```
+
+#### Advanced: Duplicate Routes
+
+When the same route is defined multiple times, **the last definition wins**:
+
+```php
+$router->get('/users', function () {
+    echo 'First handler';
+});
+
+$router->get('/users', function () {
+    echo 'Second handler';  // This one executes
+});
+
+$router->dispatch(); // Outputs: "Second handler"
+```
+
+This provides predictable route override behavior.
+
+#### Performance Characteristics
+
+The routing implementation uses hash map lookups for **O(1) constant-time performance**:
+
+| Number of Routes | Lookup Time | Performance  |
+|------------------|-------------|--------------|
+| 10 routes        | 1 lookup    | **Constant** |
+| 100 routes       | 1 lookup    | **Constant** |
+| 1,000 routes     | 1 lookup    | **Constant** |
+| 10,000 routes    | 1 lookup    | **Constant** |
+
+**Key Benefits:**
+- No performance degradation as routes increase
+- Single hash lookup regardless of route count
+- Pre-validated actions eliminate runtime checks
+- Zero iteration overhead
+
+**Real-world impact:** At 1,000 requests/second with 200 routes:
+- Hash map router: **1,000 lookups/second**
+- Sequential router: **100,000 comparisons/second** (100x more operations)
+
+#### Complete Example
+
+```php
+use Zerotoprod\WebFramework\Plugins\HandleRoute;
+
+class HomeController {
+    public function index(array $server) {
+        echo "<h1>Welcome Home</h1>";
+    }
+}
+
+class ApiController {
+    public function users(array $server) {
+        header('Content-Type: application/json');
+        echo json_encode(['users' => ['Alice', 'Bob']]);
+    }
+
+    public function createUser(array $server) {
+        header('Content-Type: application/json');
+        echo json_encode(['message' => 'User created']);
+    }
+}
+
+// Initialize router
+$router = new HandleRoute($_SERVER);
+
+// Define routes
+$router
+    ->get('/', [HomeController::class, 'index'])
+    ->get('/api/users', [ApiController::class, 'users'])
+    ->post('/api/users', [ApiController::class, 'createUser'])
+    ->get('/about', 'About Us - Version 1.0')
+    ->get('/health', function ($server) {
+        echo json_encode([
+            'status' => 'healthy',
+            'timestamp' => time()
+        ]);
+    })
+    ->dispatch();
+
+// Handle 404
+if (!$router->hasMatched()) {
+    http_response_code(404);
+    echo '404 - Page Not Found';
+}
 ```
 
 ## Contributing

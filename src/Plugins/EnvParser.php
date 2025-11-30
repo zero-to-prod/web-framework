@@ -14,10 +14,8 @@ class EnvParser
      */
     public static function handle(): callable
     {
-        return static function (string $env_path): array {
-            return Phpdotenv::parse(
-                file($env_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES)
-            );
+        return static function (string $env_content): array {
+            return Phpdotenv::parseFromString($env_content);
         };
     }
 }
