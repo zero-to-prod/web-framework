@@ -39,7 +39,7 @@ class HandleRoutesTest extends TestCase
                 (new HandleRoute($server))
                     ->get('/test-route', function () use (&$route_executed) {
                         $route_executed = true;
-                    });
+                    })->dispatch();
             });
 
         $this->assertTrue($route_executed);
@@ -66,7 +66,7 @@ class HandleRoutesTest extends TestCase
                     })
                     ->get('/about', function () use (&$about_executed) {
                         $about_executed = true;
-                    });
+                    })->dispatch();
             });
 
         $this->assertFalse($home_executed);
@@ -88,7 +88,7 @@ class HandleRoutesTest extends TestCase
             ->setServerTarget($server)
             ->handleRoutes(function ($env, $server) {
                 (new HandleRoute($server))
-                    ->get('/hello', 'Hello World');
+                    ->get('/hello', 'Hello World')->dispatch();
             });
         $output = ob_get_clean();
 
@@ -114,7 +114,7 @@ class HandleRoutesTest extends TestCase
                     })
                     ->post('/submit', function () use (&$post_executed) {
                         $post_executed = true;
-                    });
+                    })->dispatch();
             });
 
         $this->assertTrue($post_executed);

@@ -3,12 +3,18 @@
 namespace Zerotoprod\WebFramework\Plugins;
 
 /**
- * Simple routing plugin for handling HTTP requests.
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
 class HandleRoute
 {
+    /**
+     * Compiled route map for O(1) lookups: "METHOD:PATH" => callable
+     *
+     * @var array<string, callable>
+     */
+    private $routes = [];
+
     /**
      * Reference to the server array (typically $_SERVER).
      *
@@ -17,25 +23,25 @@ class HandleRoute
     private $serverTarget;
 
     /**
-     * Flag to track if a route has been matched and executed.
-     *
-     * @var bool
-     */
-    private $route_matched = false;
-
-    /**
-     * Cached request method (parsed once in constructor).
+     * Cached request method.
      *
      * @var string
      */
     private $request_method;
 
     /**
-     * Cached request path (parsed once in constructor, query string stripped).
+     * Cached request path (query string stripped).
      *
      * @var string
      */
     private $request_path;
+
+    /**
+     * The matched and executed route key, or null if no match.
+     *
+     * @var string|null
+     */
+    private $matched_route = null;
 
     /**
      * Create a new HandleRoute instance.
@@ -47,13 +53,12 @@ class HandleRoute
     public function __construct(array &$serverTarget)
     {
         $this->serverTarget = &$serverTarget;
-
         $this->request_method = $serverTarget['REQUEST_METHOD'] ?? '';
         $this->request_path = $this->parsePath($serverTarget['REQUEST_URI'] ?? '');
     }
 
     /**
-     * Parse URI path, stripping query string and handling edge cases.
+     * Parse URI path, stripping query string.
      *
      * @param  string  $uri  The URI to parse
      *
@@ -66,10 +71,36 @@ class HandleRoute
     }
 
     /**
+     * Add a route to the route map.
+     *
+     * This builds the hash map for O(1) lookups. Call this method for each route,
+     * then call dispatch() to execute the matched route.
+     *
+     * @param  string                      $method  HTTP method (GET, POST, etc.)
+     * @param  string                      $uri     URI pattern to match
+     * @param  callable|array|string|null  $action  Action to execute
+     *
+     * @return HandleRoute  Returns $this for method chaining during definition
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function add(string $method, string $uri, $action = null): HandleRoute
+    {
+        $normalized = $this->normalizeAction($action);
+
+        if ($normalized !== null) {
+            $key = $method . ':' . $uri;
+            $this->routes[$key] = $normalized;
+        }
+
+        return $this;
+    }
+
+    /**
      * Define a GET route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -77,14 +108,14 @@ class HandleRoute
      */
     public function get(string $uri, $action = null): HandleRoute
     {
-        return $this->match('GET', $uri, $this->normalizeAction($action));
+        return $this->add('GET', $uri, $action);
     }
 
     /**
      * Define a POST route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -92,14 +123,14 @@ class HandleRoute
      */
     public function post(string $uri, $action = null): HandleRoute
     {
-        return $this->match('POST', $uri, $this->normalizeAction($action));
+        return $this->add('POST', $uri, $action);
     }
 
     /**
      * Define a PUT route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -107,14 +138,14 @@ class HandleRoute
      */
     public function put(string $uri, $action = null): HandleRoute
     {
-        return $this->match('PUT', $uri, $this->normalizeAction($action));
+        return $this->add('PUT', $uri, $action);
     }
 
     /**
      * Define a PATCH route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -122,14 +153,14 @@ class HandleRoute
      */
     public function patch(string $uri, $action = null): HandleRoute
     {
-        return $this->match('PATCH', $uri, $this->normalizeAction($action));
+        return $this->add('PATCH', $uri, $action);
     }
 
     /**
      * Define a DELETE route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -137,14 +168,14 @@ class HandleRoute
      */
     public function delete(string $uri, $action = null): HandleRoute
     {
-        return $this->match('DELETE', $uri, $this->normalizeAction($action));
+        return $this->add('DELETE', $uri, $action);
     }
 
     /**
      * Define an OPTIONS route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -152,14 +183,14 @@ class HandleRoute
      */
     public function options(string $uri, $action = null): HandleRoute
     {
-        return $this->match('OPTIONS', $uri, $this->normalizeAction($action));
+        return $this->add('OPTIONS', $uri, $action);
     }
 
     /**
      * Define a HEAD route.
      *
      * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute (callable, [Class::class, 'method'], or string response)
+     * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
@@ -167,78 +198,78 @@ class HandleRoute
      */
     public function head(string $uri, $action = null): HandleRoute
     {
-        return $this->match('HEAD', $uri, $this->normalizeAction($action));
+        return $this->add('HEAD', $uri, $action);
     }
 
     /**
-     * Normalize action to a consistent type, validating controller arrays at definition time.
-     *
-     * Converts controller arrays to callables immediately, eliminating runtime validation.
-     * Invalid controller arrays become null (no-op).
+     * Normalize action to callable, validating at definition time.
      *
      * @param  callable|array|string|null  $action  The action to normalize
      *
-     * @return callable|string|null  Normalized action (callable, string, or null)
+     * @return callable|null  Normalized callable or null
      */
     private function normalizeAction($action)
     {
+        if ($action === null) {
+            return null;
+        }
+
+        if (is_callable($action)) {
+            return $action;
+        }
+
+        if (is_string($action)) {
+            return static function ($server) use ($action) {
+                echo $action;
+            };
+        }
+
         if (is_array($action)) {
-            // Validate controller array format at definition time
             if (count($action) === 2
                 && is_string($action[0])
                 && is_string($action[1])
                 && class_exists($action[0])
                 && method_exists($action[0], $action[1])
             ) {
-                // Convert to callable - validation happens once, not on every request
                 $class = $action[0];
                 $method = $action[1];
-                $serverTarget = &$this->serverTarget;
 
-                return function () use ($class, $method, &$serverTarget) {
-                    call_user_func([new $class(), $method], $serverTarget);
+                return function ($server) use ($class, $method) {
+                    call_user_func([new $class(), $method], $server);
                 };
             }
 
-            // Invalid controller array becomes null (no-op)
-            return null;
+            // Invalid controller arrays become no-op callables
+            // This allows the route to match but do nothing (safe degradation)
+            return function ($server) {
+                // No-op: Invalid action, silently does nothing
+            };
         }
 
-        return $action;
+        return null;
     }
 
     /**
-     * Match a route and execute action if matches current request.
+     * Dispatch the request using O(1) hash map lookup.
      *
-     * Actions are pre-normalized by normalizeAction(), so only callable, string, or null arrive here.
+     * This is the hot path - optimized for maximum performance.
+     * No iteration, no conditionals beyond the hash lookup.
      *
-     * @param  string                   $method  The HTTP method to match
-     * @param  string                   $uri     The URI pattern to match
-     * @param  callable|string|null  $action  The normalized action to execute
+     * @return bool  True if route was matched and executed, false otherwise
      *
-     * @return HandleRoute  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
-    private function match(string $method, string $uri, $action = null): HandleRoute
+    public function dispatch(): bool
     {
-        if ($this->route_matched) {
-            return $this;
+        $key = $this->request_method . ':' . $this->request_path;
+
+        if (isset($this->routes[$key])) {
+            $this->matched_route = $key;
+            $this->routes[$key]($this->serverTarget);
+            return true;
         }
 
-        if ($this->request_method === $method && $this->request_path === $uri) {
-            $this->route_matched = true;
-
-            if ($action === null) {
-                return $this;
-            }
-
-            if (is_callable($action)) {
-                $action($this->serverTarget);
-            } else {
-                echo $action;
-            }
-        }
-
-        return $this;
+        return false;
     }
 
     /**
@@ -248,7 +279,17 @@ class HandleRoute
      */
     public function hasMatched(): bool
     {
-        return $this->route_matched;
+        return $this->matched_route !== null;
+    }
+
+    /**
+     * Get the matched route key (METHOD:PATH format).
+     *
+     * @return string|null
+     */
+    public function getMatchedRoute(): ?string
+    {
+        return $this->matched_route;
     }
 
     /**
@@ -258,11 +299,20 @@ class HandleRoute
      */
     public function reset(): HandleRoute
     {
-        $this->route_matched = false;
-
+        $this->matched_route = null;
         $this->request_method = $this->serverTarget['REQUEST_METHOD'] ?? '';
         $this->request_path = $this->parsePath($this->serverTarget['REQUEST_URI'] ?? '');
 
         return $this;
+    }
+
+    /**
+     * Get the compiled routes map (for debugging/inspection).
+     *
+     * @return array<string, callable>
+     */
+    public function getRoutes(): array
+    {
+        return $this->routes;
     }
 }

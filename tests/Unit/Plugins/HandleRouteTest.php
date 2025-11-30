@@ -164,6 +164,7 @@ class HandleRouteTest extends TestCase
         $router->get('/home', function () use (&$executed) {
             $executed = true;
         });
+        $router->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -180,7 +181,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->post('/submit', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -197,7 +198,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->put('/update', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -214,7 +215,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->patch('/partial-update', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -231,7 +232,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->delete('/remove', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -248,7 +249,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->options('/api', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -265,7 +266,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->head('/status', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -281,7 +282,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/hello', 'Hello World');
+        $router->get('/hello', 'Hello World')->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('Hello World', $output);
@@ -333,7 +334,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/search', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -350,7 +351,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/results', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -372,14 +373,14 @@ class HandleRouteTest extends TestCase
             })
             ->get('/about', function () use (&$about_executed) {
                 $about_executed = true;
-            });
+            })->dispatch();
 
         $this->assertFalse($home_executed);
         $this->assertTrue($about_executed);
     }
 
     /** @test */
-    public function only_first_matching_route_executes(): void
+    public function last_route_definition_wins_for_duplicates(): void
     {
         $server = [
             'REQUEST_METHOD' => 'GET',
@@ -395,10 +396,11 @@ class HandleRouteTest extends TestCase
             })
             ->get('/duplicate', function () use (&$second_executed) {
                 $second_executed = true;
-            });
+            })->dispatch();
 
-        $this->assertTrue($first_executed);
-        $this->assertFalse($second_executed);
+        // In O(1) hash map implementation, last definition wins (overwrites first)
+        $this->assertFalse($first_executed);
+        $this->assertTrue($second_executed);
     }
 
     /** @test */
@@ -412,7 +414,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/null-action', null);
+        $router->get('/null-action', null)->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('', $output);
@@ -427,7 +429,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/home', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertFalse($executed);
     }
@@ -443,7 +445,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/home', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertFalse($executed);
     }
@@ -474,7 +476,7 @@ class HandleRouteTest extends TestCase
 
         $router = new HandleRoute($server);
         $router->get('/home', function () {
-        });
+        })->dispatch();
 
         $this->assertTrue($router->hasMatched());
     }
@@ -504,7 +506,7 @@ class HandleRouteTest extends TestCase
 
         $router = new HandleRoute($server);
         $router->get('/home', function () {
-        });
+        })->dispatch();
 
         $this->assertTrue($router->hasMatched());
 
@@ -538,13 +540,13 @@ class HandleRouteTest extends TestCase
 
         $router->get('/home', function () use (&$first_count) {
             $first_count++;
-        });
+        })->dispatch();
 
         $router->reset();
 
         $router->get('/home', function () use (&$second_count) {
             $second_count++;
-        });
+        })->dispatch();
 
         $this->assertEquals(1, $first_count);
         $this->assertEquals(1, $second_count);
@@ -564,7 +566,7 @@ class HandleRouteTest extends TestCase
 
         $router->get('/initial', function () use (&$initial_executed) {
             $initial_executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($initial_executed);
 
@@ -573,7 +575,7 @@ class HandleRouteTest extends TestCase
 
         $router->get('/updated', function () use (&$updated_executed) {
             $updated_executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($updated_executed);
     }
@@ -590,7 +592,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -642,7 +644,7 @@ class HandleRouteTest extends TestCase
         ob_start();
         $router->get('/echo-test', function () {
             echo 'Echoed content';
-        });
+        })->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('Echoed content', $output);
@@ -665,7 +667,7 @@ class HandleRouteTest extends TestCase
             })
             ->post('/resource', function () use (&$post_executed) {
                 $post_executed = true;
-            });
+            })->dispatch();
 
         $this->assertFalse($get_executed);
         $this->assertTrue($post_executed);
@@ -680,7 +682,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/controller', [TestController::class, 'index']);
+        $router->get('/controller', [TestController::class, 'index'])->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
     }
@@ -696,7 +698,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/show', [TestController::class, 'show']);
+        $router->get('/show', [TestController::class, 'show'])->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('Controller response', $output);
@@ -711,7 +713,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->post('/store', [TestController::class, 'store']);
+        $router->post('/store', [TestController::class, 'store'])->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
     }
@@ -727,7 +729,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->put('/update', [TestController::class, 'update']);
+        $router->put('/update', [TestController::class, 'update'])->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('Updated resource', $output);
@@ -744,7 +746,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->patch('/partial-update', [TestController::class, 'update']);
+        $router->patch('/partial-update', [TestController::class, 'update'])->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('Updated resource', $output);
@@ -759,7 +761,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->delete('/destroy', [TestController::class, 'destroy']);
+        $router->delete('/destroy', [TestController::class, 'destroy'])->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
     }
@@ -775,7 +777,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->options('/resource', [TestController::class, 'show']);
+        $router->options('/resource', [TestController::class, 'show'])->dispatch();
         $output = ob_get_clean();
 
         $this->assertEquals('Controller response', $output);
@@ -790,7 +792,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->head('/resource', [TestController::class, 'index']);
+        $router->head('/resource', [TestController::class, 'index'])->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
     }
@@ -806,7 +808,8 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router
             ->get('/test', [TestController::class, 'index'])
-            ->get('/another', [AnotherController::class, 'handle']);
+            ->get('/another', [AnotherController::class, 'handle'])
+            ->dispatch();
 
         $this->assertEquals(0, TestController::$call_count);
         $this->assertTrue(AnotherController::$executed);
@@ -823,7 +826,8 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router
             ->get('/duplicate', [TestController::class, 'index'])
-            ->get('/duplicate', [TestController::class, 'store']);
+            ->get('/duplicate', [TestController::class, 'store'])
+            ->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
     }
@@ -845,7 +849,8 @@ class HandleRouteTest extends TestCase
                 $closure_executed = true;
             })
             ->get('/mixed', [TestController::class, 'show'])
-            ->get('/string', 'String response');
+            ->get('/string', 'String response')
+            ->dispatch();
         $output = ob_get_clean();
 
         $this->assertFalse($closure_executed);
@@ -889,7 +894,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/search', [TestController::class, 'index']);
+        $router->get('/search', [TestController::class, 'index'])->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
     }
@@ -903,12 +908,12 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/test', [TestController::class, 'index']);
+        $router->get('/test', [TestController::class, 'index'])->dispatch();
 
         $this->assertEquals(1, TestController::$call_count);
 
         $router->reset();
-        $router->get('/test', [TestController::class, 'index']);
+        $router->get('/test', [TestController::class, 'index'])->dispatch();
 
         $this->assertEquals(2, TestController::$call_count);
     }
@@ -922,7 +927,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/home', [TestController::class, 'index']);
+        $router->get('/home', [TestController::class, 'index'])->dispatch();
 
         $this->assertTrue($router->hasMatched());
 
@@ -930,7 +935,7 @@ class HandleRouteTest extends TestCase
 
         $this->assertFalse($router->hasMatched());
 
-        $router->get('/home', [TestController::class, 'store']);
+        $router->get('/home', [TestController::class, 'store'])->dispatch();
 
         $this->assertEquals(2, TestController::$call_count);
     }
@@ -965,7 +970,7 @@ class HandleRouteTest extends TestCase
 
             for ($j = 1; $j <= $routes; $j++) {
                 $router->get("/route-$j", function () {
-                });
+                })->dispatch();
             }
         }
         $duration = microtime(true) - $start;
@@ -990,7 +995,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/test', function ($srv) use (&$received_server) {
             $received_server = $srv;
-        });
+        })->dispatch();
 
         $this->assertNotNull($received_server);
         $this->assertEquals($server, $received_server);
@@ -1009,7 +1014,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/controller', [TestController::class, 'index']);
+        $router->get('/controller', [TestController::class, 'index'])->dispatch();
 
         $this->assertNotNull(TestController::$received_server);
         $this->assertEquals($server, TestController::$received_server);
@@ -1032,7 +1037,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->post('/submit', function ($srv) use (&$received_server) {
             $received_server = $srv;
-        });
+        })->dispatch();
 
         $this->assertArrayHasKey('REQUEST_METHOD', $received_server);
         $this->assertArrayHasKey('REQUEST_URI', $received_server);
@@ -1054,7 +1059,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->delete('/resource/123', [TestController::class, 'destroy']);
+        $router->delete('/resource/123', [TestController::class, 'destroy'])->dispatch();
 
         $this->assertArrayHasKey('REQUEST_METHOD', TestController::$received_server);
         $this->assertArrayHasKey('REQUEST_URI', TestController::$received_server);
@@ -1075,7 +1080,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('/test', function (&$srv) {
             $srv['MODIFIED'] = 'true';
-        });
+        })->dispatch();
 
         $this->assertEquals('true', $server['MODIFIED']);
     }
@@ -1098,7 +1103,7 @@ class HandleRouteTest extends TestCase
             })
             ->get('/second', function ($srv) use (&$second_received) {
                 $second_received = $srv;
-            });
+            })->dispatch();
 
         $this->assertNull($first_received);
         $this->assertNotNull($second_received);
@@ -1117,7 +1122,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
         $router->get('', function () use (&$executed) {
             $executed = true;
-        });
+        })->dispatch();
 
         $this->assertTrue($executed);
     }
@@ -1133,7 +1138,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/test', [123, 'method']);
+        $router->get('/test', [123, 'method'])->dispatch();
         $output = ob_get_clean();
 
         // Route matches but action doesn't execute due to validation failure
@@ -1153,7 +1158,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/test', [TestController::class, 123]);
+        $router->get('/test', [TestController::class, 123])->dispatch();
         $output = ob_get_clean();
 
         // Route matches but action doesn't execute due to validation failure
@@ -1173,7 +1178,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/test', ['NonExistentClass', 'method']);
+        $router->get('/test', ['NonExistentClass', 'method'])->dispatch();
         $output = ob_get_clean();
 
         // Route matches but action doesn't execute due to validation failure
@@ -1192,7 +1197,7 @@ class HandleRouteTest extends TestCase
         $router = new HandleRoute($server);
 
         ob_start();
-        $router->get('/test', [TestController::class, 'nonExistentMethod']);
+        $router->get('/test', [TestController::class, 'nonExistentMethod'])->dispatch();
         $output = ob_get_clean();
 
         // Route matches but action doesn't execute due to validation failure
@@ -1210,7 +1215,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/test', [TestController::class]);
+        $router->get('/test', [TestController::class])->dispatch();
 
         // Should match but not execute (count !== 2)
         $this->assertTrue($router->hasMatched());
@@ -1226,7 +1231,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/test', [TestController::class, 'index', 'extra']);
+        $router->get('/test', [TestController::class, 'index', 'extra'])->dispatch();
 
         // Should match but not execute (count !== 2)
         $this->assertTrue($router->hasMatched());
@@ -1242,7 +1247,7 @@ class HandleRouteTest extends TestCase
         ];
 
         $router = new HandleRoute($server);
-        $router->get('/test', []);
+        $router->get('/test', [])->dispatch();
 
         // Should match but not execute (count !== 2)
         $this->assertTrue($router->hasMatched());
