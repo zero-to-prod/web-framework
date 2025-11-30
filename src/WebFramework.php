@@ -2,6 +2,9 @@
 
 namespace Zerotoprod\WebFramework;
 
+/**
+ * @link https://github.com/zero-to-prod/web-framework
+ */
 class WebFramework
 {
     /**
@@ -44,7 +47,7 @@ class WebFramework
      *
      * @param              $basePath string The base path of the application.
      * @param  array|null  $env      array Optional reference to environment array (defaults to $_ENV)
-     *
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function __construct(string $basePath, array &$env = null)
     {
@@ -58,6 +61,7 @@ class WebFramework
      * @param  string  $envPath
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function envPathSet(string $envPath): WebFramework
     {
@@ -72,6 +76,7 @@ class WebFramework
      * @param  ?callable(string $env_path): array  $callable
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function envParserSet(?callable $callable = null): WebFramework
     {
@@ -86,6 +91,7 @@ class WebFramework
      * @param  ?callable(array $parsed_env, array &$target_env): void  $callable
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function envBinderSet(?callable $callable = null): WebFramework
     {
@@ -94,6 +100,9 @@ class WebFramework
         return $this;
     }
 
+    /**
+     * @link https://github.com/zero-to-prod/web-framework
+     */
     public function run(): self
     {
         if ($this->envPath && $this->envParser && $this->envBinder) {
