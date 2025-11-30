@@ -1104,4 +1104,147 @@ class HandleRouteTest extends TestCase
         $this->assertNotNull($second_received);
         $this->assertEquals('value', $second_received['CUSTOM_KEY']);
     }
+
+    /** @test */
+    public function handles_empty_request_uri_without_query_string(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '',
+        ];
+        $executed = false;
+
+        $router = new HandleRoute($server);
+        $router->get('', function () use (&$executed) {
+            $executed = true;
+        });
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function handles_controller_array_with_non_string_class(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/test', [123, 'method']);
+        $output = ob_get_clean();
+
+        // Route matches but action doesn't execute due to validation failure
+        $this->assertTrue($router->hasMatched());
+        $this->assertEquals(0, TestController::$call_count);
+        $this->assertEquals('', $output);
+    }
+
+    /** @test */
+    public function handles_controller_array_with_non_string_method(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/test', [TestController::class, 123]);
+        $output = ob_get_clean();
+
+        // Route matches but action doesn't execute due to validation failure
+        $this->assertTrue($router->hasMatched());
+        $this->assertEquals(0, TestController::$call_count);
+        $this->assertEquals('', $output);
+    }
+
+    /** @test */
+    public function handles_controller_array_with_non_existent_class(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/test', ['NonExistentClass', 'method']);
+        $output = ob_get_clean();
+
+        // Route matches but action doesn't execute due to validation failure
+        $this->assertTrue($router->hasMatched());
+        $this->assertEquals('', $output);
+    }
+
+    /** @test */
+    public function handles_controller_array_with_non_existent_method(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/test', [TestController::class, 'nonExistentMethod']);
+        $output = ob_get_clean();
+
+        // Route matches but action doesn't execute due to validation failure
+        $this->assertTrue($router->hasMatched());
+        $this->assertEquals(0, TestController::$call_count);
+        $this->assertEquals('', $output);
+    }
+
+    /** @test */
+    public function handles_controller_array_with_one_element(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/test', [TestController::class]);
+
+        // Should match but not execute (count !== 2)
+        $this->assertTrue($router->hasMatched());
+        $this->assertEquals(0, TestController::$call_count);
+    }
+
+    /** @test */
+    public function handles_controller_array_with_three_elements(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/test', [TestController::class, 'index', 'extra']);
+
+        // Should match but not execute (count !== 2)
+        $this->assertTrue($router->hasMatched());
+        $this->assertEquals(0, TestController::$call_count);
+    }
+
+    /** @test */
+    public function handles_empty_controller_array(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/test', []);
+
+        // Should match but not execute (count !== 2)
+        $this->assertTrue($router->hasMatched());
+    }
 }

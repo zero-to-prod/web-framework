@@ -49,8 +49,20 @@ class HandleRoute
         $this->serverTarget = &$serverTarget;
 
         $this->request_method = $serverTarget['REQUEST_METHOD'] ?? '';
-        $request_uri = $serverTarget['REQUEST_URI'] ?? '';
-        $this->request_path = strtok($request_uri, '?');
+        $this->request_path = $this->parsePath($serverTarget['REQUEST_URI'] ?? '');
+    }
+
+    /**
+     * Parse URI path, stripping query string and handling edge cases.
+     *
+     * @param  string  $uri  The URI to parse
+     *
+     * @return string  The parsed path (empty string if parsing fails)
+     */
+    private function parsePath(string $uri): string
+    {
+        $path = strtok($uri, '?');
+        return $path !== false ? $path : '';
     }
 
     /**
@@ -65,7 +77,7 @@ class HandleRoute
      */
     public function get(string $uri, $action = null): HandleRoute
     {
-        return $this->match('GET', $uri, $action);
+        return $this->match('GET', $uri, $this->normalizeAction($action));
     }
 
     /**
@@ -80,7 +92,7 @@ class HandleRoute
      */
     public function post(string $uri, $action = null): HandleRoute
     {
-        return $this->match('POST', $uri, $action);
+        return $this->match('POST', $uri, $this->normalizeAction($action));
     }
 
     /**
@@ -95,7 +107,7 @@ class HandleRoute
      */
     public function put(string $uri, $action = null): HandleRoute
     {
-        return $this->match('PUT', $uri, $action);
+        return $this->match('PUT', $uri, $this->normalizeAction($action));
     }
 
     /**
@@ -110,7 +122,7 @@ class HandleRoute
      */
     public function patch(string $uri, $action = null): HandleRoute
     {
-        return $this->match('PATCH', $uri, $action);
+        return $this->match('PATCH', $uri, $this->normalizeAction($action));
     }
 
     /**
@@ -125,7 +137,7 @@ class HandleRoute
      */
     public function delete(string $uri, $action = null): HandleRoute
     {
-        return $this->match('DELETE', $uri, $action);
+        return $this->match('DELETE', $uri, $this->normalizeAction($action));
     }
 
     /**
@@ -140,7 +152,7 @@ class HandleRoute
      */
     public function options(string $uri, $action = null): HandleRoute
     {
-        return $this->match('OPTIONS', $uri, $action);
+        return $this->match('OPTIONS', $uri, $this->normalizeAction($action));
     }
 
     /**
@@ -155,15 +167,54 @@ class HandleRoute
      */
     public function head(string $uri, $action = null): HandleRoute
     {
-        return $this->match('HEAD', $uri, $action);
+        return $this->match('HEAD', $uri, $this->normalizeAction($action));
+    }
+
+    /**
+     * Normalize action to a consistent type, validating controller arrays at definition time.
+     *
+     * Converts controller arrays to callables immediately, eliminating runtime validation.
+     * Invalid controller arrays become null (no-op).
+     *
+     * @param  callable|array|string|null  $action  The action to normalize
+     *
+     * @return callable|string|null  Normalized action (callable, string, or null)
+     */
+    private function normalizeAction($action)
+    {
+        if (is_array($action)) {
+            // Validate controller array format at definition time
+            if (count($action) === 2
+                && is_string($action[0])
+                && is_string($action[1])
+                && class_exists($action[0])
+                && method_exists($action[0], $action[1])
+            ) {
+                // Convert to callable - validation happens once, not on every request
+                $class = $action[0];
+                $method = $action[1];
+                $serverTarget = &$this->serverTarget;
+
+                return function () use ($class, $method, &$serverTarget) {
+                    call_user_func([new $class(), $method], $serverTarget);
+                };
+            }
+
+            // Invalid controller array becomes null (no-op)
+            return null;
+        }
+
+        return $action;
     }
 
     /**
      * Match a route and execute action if matches current request.
      *
-     * @param  string                      $method  The HTTP method to match
-     * @param  string                      $uri     The URI pattern to match
-     * @param  callable|array|string|null  $action  The action to execute
+     * Actions are pre-normalized by normalizeAction(), so only callable, string, or null arrive here.
+     *
+     * @param  string                   $method  The HTTP method to match
+     * @param  string                   $uri     The URI pattern to match
+     * @param  callable|string|null  $action  The normalized action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      */
@@ -175,15 +226,8 @@ class HandleRoute
 
         if ($this->request_method === $method && $this->request_path === $uri) {
             $this->route_matched = true;
+
             if ($action === null) {
-                return $this;
-            }
-
-            if (is_array($action)) {
-                if (count($action) === 2) {
-                    call_user_func([new $action[0](), $action[1]], $this->serverTarget);
-                }
-
                 return $this;
             }
 
@@ -217,8 +261,7 @@ class HandleRoute
         $this->route_matched = false;
 
         $this->request_method = $this->serverTarget['REQUEST_METHOD'] ?? '';
-        $request_uri = $this->serverTarget['REQUEST_URI'] ?? '';
-        $this->request_path = strtok($request_uri, '?');
+        $this->request_path = $this->parsePath($this->serverTarget['REQUEST_URI'] ?? '');
 
         return $this;
     }
