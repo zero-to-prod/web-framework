@@ -21,9 +21,19 @@ The class uses method chaining and accepts optional callables for customizing be
 $framework = new WebFramework($basePath);
 $framework
     ->setEnvPath($envPath)
-    ->setEnv()  // Optional callable for custom env parsing
-    ->bindEnvsToGlobalsImmutable();  // Optional callable for custom binding
+    ->setEnvParser(EnvParser::handle())
+    ->setEnvBinder(EnvBinderImmutable::handle())
+    ->loadEnv();
 ```
+
+### Plugin System
+
+The framework uses a plugin-based architecture with two first-party plugins:
+
+1. **EnvParser** (`src/Plugins/EnvParser.php`) - Parses `.env` files into associative arrays
+2. **EnvBinderImmutable** (`src/Plugins/EnvBinderImmutable.php`) - Binds variables without overwriting existing ones
+
+Custom plugins can be provided as callables to `setEnvParser()` and `setEnvBinder()`.
 
 ### Dependencies
 
@@ -53,7 +63,7 @@ sh dock composer install
 sh dock test
 
 # Run tests with PHPUnit options
-sh dock test --filter=ExampleTest
+sh dock test --filter=EnvTest
 
 # Run full test suite across ALL PHP versions (7.1-8.5)
 sh test.sh
@@ -90,7 +100,35 @@ PHP_DEBUG=8.1
 PHP_COMPOSER=8.1
 ```
 
-Change these values and re-run `sh dock composer update` to switch PHP versions.
+Change these values and re-run `sh dock composer install` to switch PHP versions.
+
+## Testing
+
+### Test Structure
+
+- Test suite: PHPUnit (located in `tests/`)
+- Test namespace: `Tests\` (PSR-4 autoloaded to `tests/`)
+- Configuration: `phpunit.xml`
+- Test naming: All test files must end with `Test.php`
+- Base test class: `Tests\TestCase` (if present)
+
+### Running Single Tests
+
+```bash
+# Run a specific test method
+sh dock test --filter=env_path_set_returns_instance_for_chaining
+
+# Run a specific test file
+sh dock test tests/Unit/EnvTest.php
+```
+
+### Test Patterns
+
+Tests use PHPUnit's `@test` annotation and follow these patterns:
+- Method naming: `descriptive_test_name_in_snake_case`
+- Setup/teardown: Use `setUp()` and `tearDown()` to manage test environment
+- Environment cleanup: Always clean up `$_ENV` and `putenv()` in `tearDown()`
+- Temporary files: Use `tempnam()` and `unlink()` for file-based tests
 
 ## Docker Services
 
@@ -105,7 +143,7 @@ All services mount:
 
 ## Documentation Publishing
 
-The package includes a bin script (`bin/zero-to-prod-web-framework`) that publishes the README to a local documentation directory:
+The package includes a bin script (`bin/web-framework`) that publishes the README to a local documentation directory:
 
 ```bash
 # Publish to default location (./docs/zero-to-prod/web-framework)
@@ -117,12 +155,13 @@ vendor/bin/zero-to-prod-web-framework /path/to/docs
 
 This can be automated via Composer scripts (see README.md).
 
-## Testing Structure
+## Future Development
 
-- Test suite: PHPUnit (located in `tests/`)
-- Test namespace: `Tests\` (PSR-4 autoloaded to `tests/`)
-- Configuration: `phpunit.xml`
-- Test naming: All test files must end with `Test.php`
+Two routing design proposals exist in the repository:
+- `ROUTING_PROPOSAL.md` - Method-based fluent interface approach
+- `CACHEABLE_ROUTING_DESIGN.md` - Performance-focused cacheable routing system
+
+These documents outline potential future features for request/response handling and routing.
 
 ## Key Technical Details
 
@@ -131,3 +170,4 @@ This can be automated via Composer scripts (see README.md).
 - **PSR-4 Autoloading**: `src/` maps to `Zerotoprod\WebFramework\`
 - **Vendor Directories**: Isolated per PHP version in `.vendor/php{VERSION}/`
 - **Dependency**: Local path repository to `../phpdotenv` package
+- **Bootstrap Script**: `dock` - Bash wrapper for Docker Compose commands

@@ -202,7 +202,7 @@ class EnvTest extends TestCase
     {
         file_put_contents($this->temp_env_file, "APP_NAME=TestApp\nAPP_ENV=testing");
 
-        $web_framework = (new WebFramework($this->base_path))
+        (new WebFramework($this->base_path))
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
@@ -251,23 +251,26 @@ class EnvTest extends TestCase
     }
 
     /** @test */
-    public function custom_parser_receives_env_path(): void
+    public function custom_parser_receives_env_content(): void
     {
-        $received_path = null;
+        $file_content = "TEST_VAR=test_value";
+        file_put_contents($this->temp_env_file, $file_content);
+
+        $received_content = null;
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
-            ->setEnvParser(function ($env_path) use (&$received_path) {
-                $received_path = $env_path;
+            ->setEnvParser(function ($env_content) use (&$received_content) {
+                $received_content = $env_content;
 
                 return [];
             })
             ->setEnvBinder(EnvBinderImmutable::handle())
             ->loadEnv();
 
-        $this->assertEquals($this->temp_env_file, $received_path);
+        $this->assertEquals($file_content, $received_content);
     }
 
     /** @test */
@@ -389,6 +392,23 @@ class EnvTest extends TestCase
     }
 
     /** @test */
+    public function run_throws_exception_when_env_file_cannot_be_read(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Unable to read environment file:');
+
+        $non_existent_file = $this->base_path . '/non_existent_file.env';
+
+        $web_framework = new WebFramework($this->base_path);
+        $web_framework
+            ->setEnvTarget($_ENV)
+            ->setEnvPath($non_existent_file)
+            ->setEnvParser(EnvParser::handle())
+            ->setEnvBinder(EnvBinderImmutable::handle())
+            ->loadEnv();
+    }
+
+    /** @test */
     public function run_throws_exception_when_parser_returns_null(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -398,7 +418,7 @@ class EnvTest extends TestCase
         $web_framework
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
-            ->setEnvParser(function ($env_path) {
+            ->setEnvParser(function ($env_content) {
                 return null;
             })
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -415,7 +435,7 @@ class EnvTest extends TestCase
         $web_framework
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
-            ->setEnvParser(function ($env_path) {
+            ->setEnvParser(function ($env_content) {
                 return 'invalid_return_value';
             })
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -432,7 +452,7 @@ class EnvTest extends TestCase
         $web_framework
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
-            ->setEnvParser(function ($env_path) {
+            ->setEnvParser(function ($env_content) {
                 return 123;
             })
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -449,7 +469,7 @@ class EnvTest extends TestCase
         $web_framework
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
-            ->setEnvParser(function ($env_path) {
+            ->setEnvParser(function ($env_content) {
                 return false;
             })
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -466,7 +486,7 @@ class EnvTest extends TestCase
         $web_framework
             ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
-            ->setEnvParser(function ($env_path) {
+            ->setEnvParser(function ($env_content) {
                 return new \stdClass();
             })
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -523,18 +543,21 @@ class EnvTest extends TestCase
     /** @test */
     public function load_env_defaults_can_be_overridden_with_custom_parser(): void
     {
-        file_put_contents($this->temp_env_file, "IGNORED=ignored_value");
+        $env_file = $this->base_path . '/.env';
+        file_put_contents($env_file, "IGNORED=ignored_value");
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
             ->setEnvDefaults()
-            ->setEnvParser(function ($env_path) {
+            ->setEnvParser(function ($env_content) {
                 return ['CUSTOM_PARSER_VAR' => 'custom_parser_value'];
             })
             ->loadEnv();
 
         $this->assertEquals('custom_parser_value', $_ENV['CUSTOM_PARSER_VAR']);
         $this->assertArrayNotHasKey('IGNORED', $_ENV);
+
+        unlink($env_file);
     }
 
     /** @test */

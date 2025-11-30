@@ -47,15 +47,22 @@ class WebFramework
     private $envTarget;
 
     /**
+     * Reference to the server array.
+     *
+     * @var array|null
+     */
+    private $serverTarget;
+
+    /**
      * Create a new WebFramework instance.
      *
-     * @param  string  $basePath  The base path of the application.
+     * @param  string|null  $basePath  The base path of the application.
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(string $basePath)
+    public function __construct(string $basePath = null)
     {
-        $this->basePath = $basePath;
+        $this->basePath = $basePath ?? getcwd();
     }
 
     /**
@@ -79,6 +86,32 @@ class WebFramework
     }
 
     /**
+     * Set the target server array for binding.
+     *
+     * @param  array  $serverTarget
+     *
+     * @return $this
+     */
+    public function setServerTarget(array &$serverTarget): WebFramework
+    {
+        $this->serverTarget = &$serverTarget;
+
+        return $this;
+    }
+
+    /**
+     * @param  callable(array $envTarget, array $serverTarget): array  $definition
+     *
+     * @return $this
+     */
+    public function handleRoutes(callable $definition): WebFramework
+    {
+        $definition($this->envTarget, $this->serverTarget);
+
+        return $this;
+    }
+
+    /**
      * Set the path to the environment file.
      *
      * @param  string  $envPath  The absolute or relative path to the .env file
@@ -97,10 +130,10 @@ class WebFramework
     /**
      * Set the environment file parser.
      *
-     * Provide a callable that accepts an environment file path and returns
+     * Provide a callable that accepts environment file content as a string and returns
      * an associative array of parsed environment variables.
      *
-     * @param  callable(string $envPath): array  $callable  A callable that parses the environment file
+     * @param  callable(string $envContent): array  $callable  A callable that parses the environment file content
      *
      * @return WebFramework  Returns $this for method chaining
      *
@@ -149,7 +182,7 @@ class WebFramework
     {
         return $this
             ->setEnvTarget($_ENV)
-            ->setEnvPath($this->basePath . '/.env')
+            ->setEnvPath($this->basePath.'/.env')
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle());
     }
@@ -157,12 +190,13 @@ class WebFramework
     /**
      * Load and bind environment variables.
      *
-     * Validates configuration, parses the environment file using the configured parser,
+     * Reads the environment file, parses it using the configured parser,
      * and binds variables to the target environment using the configured binder.
      *
      * @return WebFramework  Returns $this for method chaining
      *
      * @throws RuntimeException  If envParser, envBinder, or envPath is not configured
+     * @throws RuntimeException  If the environment file cannot be read
      * @throws RuntimeException  If the parser does not return an array
      *
      * @link https://github.com/zero-to-prod/web-framework
@@ -179,7 +213,20 @@ class WebFramework
             throw new RuntimeException('Environment path not set.');
         }
 
-        $parsedEnv = ($this->envParser)($this->envPath);
+        if (!file_exists($this->envPath)) {
+            throw new RuntimeException(
+                sprintf('Unable to read environment file: %s', $this->envPath)
+            );
+        }
+
+        $env_content = file_get_contents($this->envPath);
+        if ($env_content === false) {
+            throw new RuntimeException(
+                sprintf('Unable to read environment file: %s', $this->envPath)
+            );
+        }
+
+        $parsedEnv = ($this->envParser)($env_content);
 
         if (!is_array($parsedEnv)) {
             throw new RuntimeException(
