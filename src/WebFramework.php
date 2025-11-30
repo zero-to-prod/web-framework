@@ -2,9 +2,9 @@
 
 namespace Zerotoprod\WebFramework;
 
-use Closure;
-use Zerotoprod\Phpdotenv\Phpdotenv;
-
+/**
+ * @link https://github.com/zero-to-prod/web-framework
+ */
 class WebFramework
 {
     /**
@@ -12,57 +12,75 @@ class WebFramework
      *
      * @var string
      */
-    private $base_path;
+    private $basePath;
 
     /**
-     * The environment variables.
+     * The parser for the environment file.
      *
      * @var array
      */
-    private $env;
+    private $envParser;
 
     /**
      * The path to the environment file.
      *
      * @var string
      */
-    private $env_path;
+    private $envPath;
+
+    /**
+     * The environment binder.
+     *
+     * @var callable|null
+     */
+    private $envBinder;
+
+    /**
+     * Reference to the environment array.
+     *
+     * @var array
+     */
+    private $env;
 
     /**
      * Create a new WebFramework instance.
      *
-     * @param $basePath string The base path of the application.
-     *
-     * @return void
+     * @param              $basePath string The base path of the application.
+     * @param  array|null  $env      array Optional reference to environment array (defaults to $_ENV)
+     * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(string $basePath)
+    public function __construct(string $basePath, array &$env = null)
     {
-        $this->base_path = $basePath;
+        $this->basePath = $basePath;
+        $this->env = &$env;
     }
 
-    public function setEnvPath(string $env_path): WebFramework
+    /**
+     * Set the path to the environment file.
+     *
+     * @param  string  $envPath
+     *
+     * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function envPathSet(string $envPath): WebFramework
     {
-        $this->env_path = $env_path;
+        $this->envPath = $envPath;
 
         return $this;
     }
 
     /**
+     * Set the environment variables.
+     *
      * @param  ?callable(string $env_path): array  $callable
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
-    public function setEnv(?callable $callable = null): WebFramework
+    public function envParserSet(?callable $callable = null): WebFramework
     {
-        if (!$callable instanceof Closure) {
-            $callable = static function (string $env_path): array {
-                return Phpdotenv::parse(
-                    file($env_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES)
-                );
-            };
-        }
-
-        $this->env = $callable($this->env_path);
+        $this->envParser = $callable;
 
         return $this;
     }
@@ -70,25 +88,26 @@ class WebFramework
     /**
      * Bind the environment variables to the global scope immutably.
      *
-     * @param  ?callable(array $env): void  $callable
+     * @param  ?callable(array $parsed_env, array &$target_env): void  $callable
      *
      * @return $this
+     * @link https://github.com/zero-to-prod/web-framework
      */
-    public function bindEnvsToGlobalsImmutable(?callable $callable = null): WebFramework
+    public function envBinderSet(?callable $callable = null): WebFramework
     {
-        if (!$callable instanceof Closure) {
-            $callable = static function (array $env) {
-                foreach ($env as $key => $value) {
-                    if (isset($_ENV[$key]) || getenv($key) !== false) {
-                        continue;
-                    }
+        $this->envBinder = $callable;
 
-                    $_ENV[$key] = $value;
-                    putenv("$key=$value");
-                }
-            };
+        return $this;
+    }
+
+    /**
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function run(): self
+    {
+        if ($this->envPath && $this->envParser && $this->envBinder) {
+            ($this->envBinder)(($this->envParser)($this->envPath), $this->env);
         }
-        $callable($this->env);
 
         return $this;
     }

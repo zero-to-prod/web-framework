@@ -23,8 +23,10 @@
     - [Environment Variable Management](#environment-variable-management)
     - [Basic Usage](#basic-usage)
     - [Method Chaining](#method-chaining)
-    - [Custom Callable Functions](#custom-callable-functions)
+    - [Dependency Injection](#dependency-injection)
+    - [Plugin System](#plugin-system)
     - [Immutable Environment Variables](#immutable-environment-variables)
+    - [Order Independence](#order-independence)
 - [Local Development](./LOCAL_DEVELOPMENT.md)
 - [Contributing](#contributing)
 
@@ -84,21 +86,24 @@ You can automatically publish documentation by adding the following to your `com
 
 ### Environment Variable Management
 
-The `WebFramework` class provides a fluent interface for loading and managing environment variables from `.env` files.
+The `WebFramework` class provides a fluent builder interface for loading and managing environment variables from `.env` files.
 
 ### Basic Usage
 
 ```php
 use Zerotoprod\WebFramework\WebFramework;
+use Zerotoprod\WebFramework\Plugins\EnvParser;
+use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
 
 // Create an instance with your application's base path
 $framework = new WebFramework(__DIR__);
 
-// Load and bind environment variables
+// Configure and run the environment loader
 $framework
-    ->setEnvPath(__DIR__ . '/.env')
-    ->setEnv()
-    ->bindEnvsToGlobalsImmutable();
+    ->envPathSet(__DIR__ . '/.env')
+    ->envParserSet(EnvParser::handle())
+    ->envBinderSet(EnvBinderImmutable::handle())
+    ->run();
 
 // Access environment variables
 echo $_ENV['APP_NAME'];        // Access via $_ENV
@@ -115,78 +120,124 @@ DB_PORT=3306
 
 ### Method Chaining
 
-All methods return the `WebFramework` instance, allowing for fluent method chaining:
+The builder pattern allows you to configure all options before executing with `run()`:
 
 ```php
 $framework = (new WebFramework('/var/www/html'))
-    ->setEnvPath('/var/www/html/.env')
-    ->setEnv()
-    ->bindEnvsToGlobalsImmutable();
+    ->envPathSet('/var/www/html/.env')
+    ->envParserSet(EnvParser::handle())
+    ->envBinderSet(EnvBinderImmutable::handle())
+    ->run();
 ```
 
-### Custom Callable Functions
+### Dependency Injection
 
-You can provide custom callable functions to control how environment variables are parsed and bound.
+You can inject a custom environment array for testing or isolation:
 
-#### Custom Environment Parsing
+```php
+// Default: uses global $_ENV
+$framework = new WebFramework(__DIR__);
 
+// Custom: uses your own array
+$custom_env = [];
+$framework = new WebFramework(__DIR__, $custom_env);
+
+$framework
+    ->envPathSet(__DIR__ . '/.env')
+    ->envParserSet(EnvParser::handle())
+    ->envBinderSet(EnvBinderImmutable::handle())
+    ->run();
+
+// Variables are now in $custom_env instead of $_ENV
+echo $custom_env['APP_NAME'];
+```
+
+### Plugin System
+
+The framework uses a plugin-based architecture with first-party plugins included.
+
+#### First-Party Plugins
+
+**EnvParser** - Parses `.env` files:
+```php
+use Zerotoprod\WebFramework\Plugins\EnvParser;
+
+$framework->envParserSet(EnvParser::handle());
+```
+
+**EnvBinderImmutable** - Binds variables without overwriting existing ones:
+```php
+use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
+
+$framework->envBinderSet(EnvBinderImmutable::handle());
+```
+
+#### Custom Plugins
+
+You can create custom plugins by providing callables.
+
+**Custom Parser Plugin:**
 ```php
 $framework = new WebFramework(__DIR__);
 
 $framework
-    ->setEnvPath(__DIR__ . '/.env')
-    ->setEnv(function (string $env_path): array {
+    ->envPathSet(__DIR__ . '/.env')
+    ->envParserSet(function (string $env_path): array {
         // Custom parsing logic
         $contents = file_get_contents($env_path);
         $lines = explode("\n", $contents);
-        $env = [];
+        $parsed_env = [];
 
         foreach ($lines as $line) {
             if (strpos($line, '=') !== false) {
                 list($key, $value) = explode('=', $line, 2);
-                $env[trim($key)] = trim($value);
+                $parsed_env[trim($key)] = trim($value);
             }
         }
 
-        return $env;
+        return $parsed_env;
     })
-    ->bindEnvsToGlobalsImmutable();
+    ->envBinderSet(EnvBinderImmutable::handle())
+    ->run();
 ```
 
-#### Custom Binding Logic
-
+**Custom Binder Plugin:**
 ```php
 $framework = new WebFramework(__DIR__);
 
 $framework
-    ->setEnvPath(__DIR__ . '/.env')
-    ->setEnv()
-    ->bindEnvsToGlobalsImmutable(function (array $env): void {
-        // Custom binding logic
-        foreach ($env as $key => $value) {
-            // Only bind variables with a specific prefix
+    ->envPathSet(__DIR__ . '/.env')
+    ->envParserSet(EnvParser::handle())
+    ->envBinderSet(function (array $parsed_env, array &$target_env): void {
+        // Custom binding logic - only bind APP_* variables
+        foreach ($parsed_env as $key => $value) {
             if (strpos($key, 'APP_') === 0) {
-                $_ENV[$key] = $value;
+                $target_env[$key] = $value;
                 putenv("$key=$value");
             }
         }
-    });
+    })
+    ->run();
 ```
 
 ### Immutable Environment Variables
 
-The `bindEnvsToGlobalsImmutable()` method ensures that existing environment variables are never overwritten:
+The `EnvBinderImmutable` plugin ensures that existing environment variables are never overwritten:
 
 ```php
+use Zerotoprod\WebFramework\Plugins\EnvParser;
+use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
+
 // Set an existing environment variable
 $_ENV['APP_ENV'] = 'development';
 putenv('APP_ENV=development');
 
 // Attempt to load from .env file (containing APP_ENV=production)
 $framework = (new WebFramework(__DIR__))
-    ->setEnvPath(__DIR__ . '/.env')
-    ->setEnv()
-    ->bindEnvsToGlobalsImmutable();
+    ->envPathSet(__DIR__ . '/.env')
+    ->envParserSet(EnvParser::handle())
+    ->envBinderSet(EnvBinderImmutable::handle())
+    ->run();
 
 // The original value is preserved
 echo $_ENV['APP_ENV'];  // Outputs: development (not production)
@@ -200,6 +251,16 @@ This immutability applies to variables that exist in either:
 - Overriding configuration in different environments
 - Respecting system-level environment variables
 - Preventing accidental overwrites of critical settings
+
+### Order Independence
+
+Configuration methods can be called in any order - only `run()` executes the workflow:
+
+```php
+// These are equivalent:
+$framework->envPathSet('.env')->envParserSet(EnvParser::handle())->envBinderSet(EnvBinderImmutable::handle())->run();
+$framework->envBinderSet(EnvBinderImmutable::handle())->envParserSet(EnvParser::handle())->envPathSet('.env')->run();
+```
 
 ## Contributing
 
