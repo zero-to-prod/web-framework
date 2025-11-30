@@ -91,7 +91,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -113,7 +113,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -133,7 +133,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -151,7 +151,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -167,7 +167,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $result = $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -185,7 +185,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(function ($parsed_env, &$target_env) use (&$custom_bound_vars) {
@@ -203,7 +203,7 @@ class EnvTest extends TestCase
         file_put_contents($this->temp_env_file, "APP_NAME=TestApp\nAPP_ENV=testing");
 
         $web_framework = (new WebFramework($this->base_path))
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -221,7 +221,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -240,7 +240,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -257,7 +257,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(function ($env_path) use (&$received_path) {
                 $received_path = $env_path;
@@ -280,7 +280,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(function ($parsed_env, &$target_env) use (&$received_parsed_env, &$received_target_env) {
@@ -302,7 +302,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -334,7 +334,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($custom_env)
+            ->setEnvTarget($custom_env)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -354,7 +354,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvBinder(EnvBinderImmutable::handle())
             ->loadEnv();
@@ -368,7 +368,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->loadEnv();
@@ -382,7 +382,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
             ->loadEnv();
@@ -396,7 +396,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(function ($env_path) {
                 return null;
@@ -413,7 +413,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(function ($env_path) {
                 return 'invalid_return_value';
@@ -430,7 +430,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(function ($env_path) {
                 return 123;
@@ -447,7 +447,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(function ($env_path) {
                 return false;
@@ -464,7 +464,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(function ($env_path) {
                 return new \stdClass();
@@ -638,7 +638,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -653,7 +653,7 @@ class EnvTest extends TestCase
         $custom_env = [];
 
         $web_framework = new WebFramework($this->base_path);
-        $result = $web_framework->setTargetEnv($custom_env);
+        $result = $web_framework->setEnvTarget($custom_env);
 
         $this->assertSame($web_framework, $result);
     }
@@ -667,7 +667,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($custom_env)
+            ->setEnvTarget($custom_env)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -689,7 +689,7 @@ class EnvTest extends TestCase
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
-            ->setTargetEnv($custom_env)
+            ->setEnvTarget($custom_env)
             ->loadEnv();
 
         $this->assertEquals('late_value', $custom_env['LATE_VAR']);
@@ -705,7 +705,7 @@ class EnvTest extends TestCase
 
         $web_framework = new WebFramework($this->base_path);
         $web_framework
-            ->setTargetEnv($env_a)
+            ->setEnvTarget($env_a)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())
@@ -717,7 +717,7 @@ class EnvTest extends TestCase
         file_put_contents($this->temp_env_file, "SWITCH_VAR_SECOND=new_value");
 
         $web_framework
-            ->setTargetEnv($env_b)
+            ->setEnvTarget($env_b)
             ->setEnvPath($this->temp_env_file)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle())

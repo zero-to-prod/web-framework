@@ -165,7 +165,7 @@ $framework = (new WebFramework('/var/www/html'))
 
 #### Custom Target Environment
 
-You can specify a custom environment array for testing or isolation using `setTargetEnv()`:
+You can specify a custom environment array for testing or isolation using `setEnvTarget()`:
 
 ```php
 // Default: uses global $_ENV
@@ -175,7 +175,7 @@ $framework->setEnvDefaults()->loadEnv();
 // Custom: bind to your own array
 $customEnv = [];
 $framework = (new WebFramework(__DIR__))
-    ->setTargetEnv($customEnv)  // Pass by reference
+    ->setEnvTarget($customEnv)  // Pass by reference
     ->setEnvPath(__DIR__ . '/.env')
     ->setEnvParser(EnvParser::handle())
     ->setEnvBinder(EnvBinderImmutable::handle())

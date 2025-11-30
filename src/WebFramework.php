@@ -44,7 +44,7 @@ class WebFramework
      *
      * @var array|null
      */
-    private $targetEnv;
+    private $envTarget;
 
     /**
      * Create a new WebFramework instance.
@@ -65,15 +65,15 @@ class WebFramework
      * instead of using the constructor parameter. Useful when you want to configure
      * the target environment after instantiation or when method chaining is preferred.
      *
-     * @param  array  &$targetEnv  Reference to environment array where variables will be bound
+     * @param  array  &$envTarget  Reference to environment array where variables will be bound
      *
      * @return WebFramework  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function setTargetEnv(array &$targetEnv): WebFramework
+    public function setEnvTarget(array &$envTarget): WebFramework
     {
-        $this->targetEnv = &$targetEnv;
+        $this->envTarget = &$envTarget;
 
         return $this;
     }
@@ -119,7 +119,7 @@ class WebFramework
      * Provide a callable that accepts parsed environment variables and binds them
      * to the target environment array (e.g., $_ENV, getenv()).
      *
-     * @param  callable(array $parsedEnv, array &$targetEnv): void  $callable  A callable that binds environment variables
+     * @param  callable(array $parsedEnv, array &$envTarget): void  $callable  A callable that binds environment variables
      *
      * @return WebFramework  Returns $this for method chaining
      *
@@ -136,7 +136,7 @@ class WebFramework
      * Load default environment configuration.
      *
      * Sets default values for:
-     * - targetEnv: $_ENV global
+     * - envTarget: $_ENV global
      * - envPath: {basePath}/.env
      * - envParser: EnvParser plugin
      * - envBinder: EnvBinderImmutable plugin
@@ -148,7 +148,7 @@ class WebFramework
     public function setEnvDefaults(): WebFramework
     {
         return $this
-            ->setTargetEnv($_ENV)
+            ->setEnvTarget($_ENV)
             ->setEnvPath($this->basePath . '/.env')
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle());
@@ -190,7 +190,7 @@ class WebFramework
             );
         }
 
-        ($this->envBinder)($parsedEnv, $this->targetEnv);
+        ($this->envBinder)($parsedEnv, $this->envTarget);
 
         return $this;
     }
