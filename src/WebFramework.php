@@ -26,18 +26,18 @@ class WebFramework
     private $envParser;
 
     /**
-     * The path to the environment file.
-     *
-     * @var string
-     */
-    private $envPath;
-
-    /**
      * The environment binder.
      *
      * @var callable
      */
     private $envBinder;
+
+    /**
+     * The environment file content.
+     *
+     * @var string|null
+     */
+    private $envContent;
 
     /**
      * Reference to the environment array.
@@ -56,13 +56,15 @@ class WebFramework
     /**
      * Create a new WebFramework instance.
      *
-     * @param  string|null  $basePath  The base path of the application.
+     * @example new WebFramework(cwd);
+     *
+     * @param  string  $basePath  The base path of the application.
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(string $basePath = null)
+    public function __construct(string $basePath)
     {
-        $this->basePath = $basePath ?? getcwd();
+        $this->basePath = $basePath;
     }
 
     /**
@@ -90,7 +92,8 @@ class WebFramework
      *
      * @param  array  $serverTarget
      *
-     * @return $this
+     * @return WebFramework  Returns $this for method chaining
+     *
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function setServerTarget(array &$serverTarget): WebFramework
@@ -103,28 +106,13 @@ class WebFramework
     /**
      * @param  callable(array $envTarget, array $serverTarget): array  $definition
      *
-     * @return $this
+     * @return WebFramework  Returns $this for method chaining
+     *
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function handleRoutes(callable $definition): WebFramework
     {
         $definition($this->envTarget, $this->serverTarget);
-
-        return $this;
-    }
-
-    /**
-     * Set the path to the environment file.
-     *
-     * @param  string  $envPath  The absolute or relative path to the .env file
-     *
-     * @return WebFramework  Returns $this for method chaining
-     *
-     * @link https://github.com/zero-to-prod/web-framework
-     */
-    public function setEnvPath(string $envPath): WebFramework
-    {
-        $this->envPath = $envPath;
 
         return $this;
     }
@@ -168,11 +156,29 @@ class WebFramework
     }
 
     /**
+     * Set the environment file content.
+     *
+     * Provide the raw environment file content as a string that will be parsed
+     * and bound when bindEnv() is called.
+     *
+     * @param  string  $envContent  The environment file content as a string
+     *
+     * @return WebFramework  Returns $this for method chaining
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function setEnvContent(string $envContent): WebFramework
+    {
+        $this->envContent = $envContent;
+
+        return $this;
+    }
+
+    /**
      * Load default environment configuration.
      *
      * Sets default values for:
      * - envTarget: $_ENV global
-     * - envPath: {basePath}/.env
      * - envParser: EnvParser plugin
      * - envBinder: EnvBinderImmutable plugin
      *
@@ -180,30 +186,29 @@ class WebFramework
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function setEnvDefaults(): WebFramework
+    public function setEnvDefaults(array &$targetEnv, string $envContent): WebFramework
     {
         return $this
-            ->setEnvTarget($_ENV)
-            ->setEnvPath($this->basePath.'/.env')
+            ->setEnvTarget($targetEnv)
+            ->setEnvContent($envContent)
             ->setEnvParser(EnvParser::handle())
             ->setEnvBinder(EnvBinderImmutable::handle());
     }
 
     /**
-     * Load and bind environment variables.
+     * Bind environment variables to the target environment.
      *
-     * Reads the environment file, parses it using the configured parser,
+     * Parses the stored environment content string using the configured parser,
      * and binds variables to the target environment using the configured binder.
      *
      * @return WebFramework  Returns $this for method chaining
      *
-     * @throws RuntimeException  If envParser, envBinder, or envPath is not configured
-     * @throws RuntimeException  If the environment file cannot be read
+     * @throws RuntimeException  If envParser, envBinder, or envContent is not configured
      * @throws RuntimeException  If the parser does not return an array
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function loadEnv(): WebFramework
+    public function bindEnv(): WebFramework
     {
         if (!$this->envParser) {
             throw new RuntimeException('Environment parser not set.');
@@ -211,24 +216,11 @@ class WebFramework
         if (!$this->envBinder) {
             throw new RuntimeException('Environment binder not set.');
         }
-        if (!$this->envPath) {
-            throw new RuntimeException('Environment path not set.');
+        if ($this->envContent === null) {
+            throw new RuntimeException('Environment content not set.');
         }
 
-        if (!file_exists($this->envPath)) {
-            throw new RuntimeException(
-                sprintf('Unable to read environment file: %s', $this->envPath)
-            );
-        }
-
-        $env_content = file_get_contents($this->envPath);
-        if ($env_content === false) {
-            throw new RuntimeException(
-                sprintf('Unable to read environment file: %s', $this->envPath)
-            );
-        }
-
-        $parsedEnv = ($this->envParser)($env_content);
+        $parsedEnv = ($this->envParser)($this->envContent);
 
         if (!is_array($parsedEnv)) {
             throw new RuntimeException(

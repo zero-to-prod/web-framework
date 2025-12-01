@@ -55,6 +55,29 @@ class AnotherController
     }
 }
 
+class InvokeableController
+{
+    public static $invoked = false;
+    public static $received_server = null;
+
+    public function __invoke(array $server = []): void
+    {
+        self::$invoked = true;
+        self::$received_server = $server;
+        echo 'Invokeable controller executed';
+    }
+}
+
+class InvokeableWithoutOutput
+{
+    public static $invoked = false;
+
+    public function __invoke(array $server = []): void
+    {
+        self::$invoked = true;
+    }
+}
+
 class HandleRouteTest extends TestCase
 {
     protected function setUp(): void
@@ -63,6 +86,9 @@ class HandleRouteTest extends TestCase
         TestController::$call_count = 0;
         TestController::$received_server = null;
         AnotherController::$executed = false;
+        InvokeableController::$invoked = false;
+        InvokeableController::$received_server = null;
+        InvokeableWithoutOutput::$invoked = false;
     }
     /** @test */
     public function can_instantiate_with_server_target(): void
@@ -1098,5 +1124,342 @@ class HandleRouteTest extends TestCase
         })->dispatch();
 
         $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function get_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function invokeable_controller_outputs_response(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('Invokeable controller executed', $output);
+    }
+
+    /** @test */
+    public function post_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->post('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function put_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'PUT',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->put('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function patch_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'PATCH',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->patch('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function delete_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'DELETE',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->delete('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function options_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'OPTIONS',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->options('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function head_route_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'HEAD',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->head('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function invokeable_controller_receives_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke',
+            'HTTP_HOST' => 'example.com',
+            'SERVER_PORT' => '8080',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertNotNull(InvokeableController::$received_server);
+        $this->assertEquals($server, InvokeableController::$received_server);
+        $this->assertEquals('example.com', InvokeableController::$received_server['HTTP_HOST']);
+        $this->assertEquals('8080', InvokeableController::$received_server['SERVER_PORT']);
+    }
+
+    /** @test */
+    public function invokeable_controller_receives_all_server_array_keys(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/invoke',
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_AUTHORIZATION' => 'Bearer token123',
+            'REMOTE_ADDR' => '127.0.0.1',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->post('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertArrayHasKey('REQUEST_METHOD', InvokeableController::$received_server);
+        $this->assertArrayHasKey('REQUEST_URI', InvokeableController::$received_server);
+        $this->assertArrayHasKey('CONTENT_TYPE', InvokeableController::$received_server);
+        $this->assertArrayHasKey('HTTP_AUTHORIZATION', InvokeableController::$received_server);
+        $this->assertArrayHasKey('REMOTE_ADDR', InvokeableController::$received_server);
+        $this->assertEquals('application/json', InvokeableController::$received_server['CONTENT_TYPE']);
+        $this->assertEquals('Bearer token123', InvokeableController::$received_server['HTTP_AUTHORIZATION']);
+    }
+
+    /** @test */
+    public function invokeable_controller_does_not_match_when_uri_different(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/wrong',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertFalse(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function invokeable_controller_does_not_match_when_method_different(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertFalse(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function invokeable_controller_handles_query_strings(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke?param=value&page=1',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function invokeable_controller_instantiated_each_time_route_matches(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableWithoutOutput::class)->dispatch();
+
+        $this->assertTrue(InvokeableWithoutOutput::$invoked);
+
+        InvokeableWithoutOutput::$invoked = false;
+
+        $router->reset();
+        $router->get('/invoke', InvokeableWithoutOutput::class)->dispatch();
+
+        $this->assertTrue(InvokeableWithoutOutput::$invoked);
+    }
+
+    /** @test */
+    public function invokeable_controller_works_with_reset(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/invoke', InvokeableController::class)->dispatch();
+
+        $this->assertTrue($router->hasMatched());
+        $this->assertTrue(InvokeableController::$invoked);
+
+        $router->reset();
+
+        $this->assertFalse($router->hasMatched());
+    }
+
+    /** @test */
+    public function invokeable_controller_chains_with_other_action_types(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/invoke',
+        ];
+        $closure_executed = false;
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router
+            ->get('/closure', function () use (&$closure_executed) {
+                $closure_executed = true;
+            })
+            ->get('/invoke', InvokeableController::class)
+            ->get('/array', [TestController::class, 'show'])
+            ->get('/string', 'String response')
+            ->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertFalse($closure_executed);
+        $this->assertTrue(InvokeableController::$invoked);
+        $this->assertEquals(0, TestController::$call_count);
+        $this->assertEquals('Invokeable controller executed', $output);
+    }
+
+    /** @test */
+    public function multiple_invokeable_controllers_on_different_routes(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/second',
+        ];
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/first', InvokeableController::class)
+            ->get('/second', InvokeableWithoutOutput::class)
+            ->dispatch();
+
+        $this->assertFalse(InvokeableController::$invoked);
+        $this->assertTrue(InvokeableWithoutOutput::$invoked);
+    }
+
+    /** @test */
+    public function string_that_is_not_invokeable_class_echoes_as_string(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/string',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/string', 'Just a plain string')->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('Just a plain string', $output);
+    }
+
+    /** @test */
+    public function non_existent_class_name_echoes_as_string(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/nonexistent',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/nonexistent', 'NonExistentClass')->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('NonExistentClass', $output);
+    }
+
+    /** @test */
+    public function class_without_invoke_method_echoes_as_string(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/regular',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->get('/regular', TestController::class)->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals(TestController::class, $output);
+        $this->assertEquals(0, TestController::$call_count);
     }
 }

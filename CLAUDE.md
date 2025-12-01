@@ -23,7 +23,7 @@ $framework
     ->setEnvPath($envPath)
     ->setEnvParser(EnvParser::handle())
     ->setEnvBinder(EnvBinderImmutable::handle())
-    ->loadEnv();
+    ->bindEnv();
 ```
 
 ### Plugin System

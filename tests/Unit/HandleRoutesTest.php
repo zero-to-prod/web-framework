@@ -13,7 +13,7 @@ class HandleRoutesTest extends TestCase
     {
         $env = ['env' => 'env'];
         $server = ['server' => 'server'];
-        (new WebFramework())
+        (new WebFramework(__DIR__))
             ->setEnvTarget($env)
             ->setServerTarget($server)
             ->handleRoutes(function ($env, $server) {
@@ -32,7 +32,7 @@ class HandleRoutesTest extends TestCase
         ];
         $route_executed = false;
 
-        (new WebFramework())
+        (new WebFramework(__DIR__))
             ->setEnvTarget($env)
             ->setServerTarget($server)
             ->handleRoutes(function ($env, $server) use (&$route_executed) {
@@ -56,7 +56,7 @@ class HandleRoutesTest extends TestCase
         $home_executed = false;
         $about_executed = false;
 
-        (new WebFramework())
+        (new WebFramework(__DIR__))
             ->setEnvTarget($env)
             ->setServerTarget($server)
             ->handleRoutes(function ($env, $server) use (&$home_executed, &$about_executed) {
@@ -83,7 +83,7 @@ class HandleRoutesTest extends TestCase
         ];
 
         ob_start();
-        (new WebFramework())
+        (new WebFramework(__DIR__))
             ->setEnvTarget($env)
             ->setServerTarget($server)
             ->handleRoutes(function ($env, $server) {
@@ -105,7 +105,7 @@ class HandleRoutesTest extends TestCase
         ];
         $post_executed = false;
 
-        (new WebFramework())
+        (new WebFramework(__DIR__))
             ->setEnvTarget($env)
             ->setServerTarget($server)
             ->handleRoutes(function ($env, $server) use (&$post_executed) {

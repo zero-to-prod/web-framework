@@ -108,8 +108,6 @@ The `WebFramework` class provides a fluent builder interface for loading and man
 #### Quick Start
 
 The fastest way to get started is using the `setEnvDefaults()` method, which automatically configures:
-- Target environment: `$_ENV` global
-- Environment file path: `{basePath}/.env`
 - Parser: `EnvParser` plugin
 - Binder: `EnvBinderImmutable` plugin
 
@@ -117,9 +115,10 @@ The fastest way to get started is using the `setEnvDefaults()` method, which aut
 use Zerotoprod\WebFramework\WebFramework;
 
 // Create and load with defaults in one go
+$env_content = file_get_contents(__DIR__ . '/.env');
 $framework = (new WebFramework(__DIR__))
-    ->setEnvDefaults()
-    ->loadEnv();
+    ->setEnvDefaults($_ENV, $env_content)
+    ->bindEnv();
 
 // Access environment variables
 echo $_ENV['APP_NAME'];
@@ -144,12 +143,15 @@ use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
 // Create an instance with your application's base path
 $framework = new WebFramework(__DIR__);
 
+// Read your .env file
+$env_content = file_get_contents(__DIR__ . '/.env');
+
 // Configure and run the environment loader
 $framework
-    ->setEnvPath(__DIR__ . '/.env')
     ->setEnvParser(EnvParser::handle())
     ->setEnvBinder(EnvBinderImmutable::handle())
-    ->loadEnv();
+    ->setEnvContent($env_content)
+    ->bindEnv();
 
 // Access environment variables
 echo $_ENV['APP_NAME'];        // Access via $_ENV
@@ -166,14 +168,16 @@ DB_PORT=3306
 
 #### Method Chaining
 
-The builder pattern allows you to configure all options before executing with `loadEnv()`:
+The builder pattern allows you to configure all options before executing with `bindEnv()`:
 
 ```php
+$env_content = file_get_contents('/var/www/html/.env');
+
 $framework = (new WebFramework('/var/www/html'))
-    ->setEnvPath('/var/www/html/.env')
     ->setEnvParser(EnvParser::handle())
     ->setEnvBinder(EnvBinderImmutable::handle())
-    ->loadEnv();
+    ->setEnvContent($env_content)
+    ->bindEnv();
 ```
 
 #### Custom Target Environment
@@ -183,19 +187,33 @@ You can specify a custom environment array for testing or isolation using `setEn
 ```php
 // Default: uses global $_ENV
 $framework = new WebFramework(__DIR__);
-$framework->setEnvDefaults()->loadEnv();
+$env_content = file_get_contents(__DIR__ . '/.env');
+$framework->setEnvDefaults($_ENV, $env_content)
+    ->bindEnv();
 
-// Custom: bind to your own array
+// Custom: bind to your own array using setEnvDefaults()
 $customEnv = [];
+$env_content = file_get_contents(__DIR__ . '/.env');
+
 $framework = (new WebFramework(__DIR__))
-    ->setEnvTarget($customEnv)  // Pass by reference
-    ->setEnvPath(__DIR__ . '/.env')
-    ->setEnvParser(EnvParser::handle())
-    ->setEnvBinder(EnvBinderImmutable::handle())
-    ->loadEnv();
+    ->setEnvDefaults($customEnv, $env_content)
+    ->bindEnv();
 
 // Variables are now in $customEnv instead of $_ENV
 echo $customEnv['APP_NAME'];
+
+// Alternative: use setEnvTarget() for more control
+$customEnv2 = [];
+$env_content2 = file_get_contents(__DIR__ . '/.env');
+
+$framework = (new WebFramework(__DIR__))
+    ->setEnvTarget($customEnv2)  // Pass by reference
+    ->setEnvParser(EnvParser::handle())
+    ->setEnvBinder(EnvBinderImmutable::handle())
+    ->setEnvContent($env_content2)
+    ->bindEnv();
+
+echo $customEnv2['APP_NAME'];
 
 // Note: $customEnv is passed by reference and will be modified directly
 ```
@@ -232,13 +250,12 @@ You can create custom plugins by providing callables.
 **Custom Parser Plugin:**
 ```php
 $framework = new WebFramework(__DIR__);
+$env_content = file_get_contents(__DIR__ . '/.env');
 
 $framework
-    ->setEnvPath(__DIR__ . '/.env')
-    ->setEnvParser(function (string $env_path): array {
+    ->setEnvParser(function (string $env_content): array {
         // Custom parsing logic
-        $contents = file_get_contents($env_path);
-        $lines = explode("\n", $contents);
+        $lines = explode("\n", $env_content);
         $parsed_env = [];
 
         foreach ($lines as $line) {
@@ -251,15 +268,16 @@ $framework
         return $parsed_env;
     })
     ->setEnvBinder(EnvBinderImmutable::handle())
-    ->loadEnv();
+    ->setEnvContent($env_content)
+    ->bindEnv();
 ```
 
 **Custom Binder Plugin:**
 ```php
 $framework = new WebFramework(__DIR__);
+$env_content = file_get_contents(__DIR__ . '/.env');
 
 $framework
-    ->setEnvPath(__DIR__ . '/.env')
     ->setEnvParser(EnvParser::handle())
     ->setEnvBinder(function (array $parsed_env, array &$target_env): void {
         // Custom binding logic - only bind APP_* variables
@@ -270,7 +288,8 @@ $framework
             }
         }
     })
-    ->loadEnv();
+    ->setEnvContent($env_content)
+    ->bindEnv();
 ```
 
 #### Immutable Environment Variables
@@ -286,11 +305,13 @@ $_ENV['APP_ENV'] = 'development';
 putenv('APP_ENV=development');
 
 // Attempt to load from .env file (containing APP_ENV=production)
+$env_content = file_get_contents(__DIR__ . '/.env');
+
 $framework = (new WebFramework(__DIR__))
-    ->setEnvPath(__DIR__ . '/.env')
     ->setEnvParser(EnvParser::handle())
     ->setEnvBinder(EnvBinderImmutable::handle())
-    ->loadEnv();
+    ->setEnvContent($env_content)
+    ->bindEnv();
 
 // The original value is preserved
 echo $_ENV['APP_ENV'];  // Outputs: development (not production)
@@ -307,12 +328,16 @@ This immutability applies to variables that exist in either:
 
 #### Order Independence
 
-Configuration methods can be called in any order - only `loadEnv()` executes the workflow:
+Configuration methods can be called in any order - only `bindEnv()` executes the workflow:
 
 ```php
+$content = file_get_contents('.env');
+
 // These are equivalent:
-$framework->setEnvPath('.env')->setEnvParser(EnvParser::handle())->setEnvBinder(EnvBinderImmutable::handle())->loadEnv();
-$framework->setEnvBinder(EnvBinderImmutable::handle())->setEnvParser(EnvParser::handle())->setEnvPath('.env')->loadEnv();
+$framework->setEnvParser(EnvParser::handle())->setEnvBinder(EnvBinderImmutable::handle())->setEnvContent($content)
+    ->bindEnv();
+$framework->setEnvBinder(EnvBinderImmutable::handle())->setEnvParser(EnvParser::handle())->setEnvContent($content)
+    ->bindEnv();
 ```
 
 ### HTTP Routing
@@ -358,7 +383,7 @@ $router->head('/resource', $action);     // HEAD requests
 
 #### Action Types
 
-Routes support three types of actions:
+Routes support four types of actions:
 
 ##### 1. Closures
 
@@ -386,7 +411,20 @@ $router->get('/users', [UserController::class, 'index']);
 $router->get('/users/show', [UserController::class, 'show']);
 ```
 
-##### 3. String Responses
+##### 3. Invokeable Controllers
+
+```php
+class HomeController {
+    public function __invoke(array $server) {
+        echo "<h1>Welcome Home</h1>";
+        echo "Visitor from: " . $server['REMOTE_ADDR'];
+    }
+}
+
+$router->get('/', HomeController::class);
+```
+
+##### 4. String Responses
 
 ```php
 $router->get('/status', 'OK');
