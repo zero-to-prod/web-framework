@@ -222,6 +222,12 @@ class HandleRoute
         }
 
         if (is_string($action)) {
+            if (method_exists($action, '__invoke')) {
+                return static function ($server) use ($action) {
+                    (new $action())($server);
+                };
+            }
+
             return static function () use ($action) {
                 echo $action;
             };
