@@ -22,13 +22,10 @@
 - [Usage](#usage)
     - [Environment Variables](#environment-variables)
         - [Overview](#overview)
-        - [Quick Start](#quick-start)
-        - [Basic Usage](#basic-usage)
-        - [Method Chaining](#method-chaining)
-        - [Custom Target Environment](#custom-target-environment)
-        - [Plugin System](#plugin-system)
-        - [Immutable Environment Variables](#immutable-environment-variables)
-        - [Order Independence](#order-independence)
+        - [Usage](#usage-1)
+        - [Immutable Binding](#immutable-binding)
+        - [Custom Target Array](#custom-target-array)
+        - [Return Value](#return-value)
     - [HTTP Routing](#http-routing)
         - [Overview](#overview-1)
         - [Quick Start](#quick-start-1)
@@ -103,26 +100,22 @@ You can automatically publish documentation by adding the following to your `com
 
 #### Overview
 
-The `WebFramework` class provides a fluent builder interface for loading and managing environment variables from `.env` files.
+The `EnvBinderImmutable` plugin provides a simple static method for parsing and binding environment variables from `.env` files.
 
-#### Quick Start
-
-The fastest way to get started is using the `setEnvDefaults()` method, which automatically configures:
-- Parser: `EnvParser` plugin
-- Binder: `EnvBinderImmutable` plugin
+#### Usage
 
 ```php
-use Zerotoprod\WebFramework\WebFramework;
+use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
 
-// Create and load with defaults in one go
+// Read .env file content
 $env_content = file_get_contents(__DIR__ . '/.env');
-$framework = (new WebFramework(__DIR__))
-    ->setEnvDefaults($_ENV, $env_content)
-    ->bindEnv();
+
+// Parse and bind to $_ENV immutably
+$parsed = EnvBinderImmutable::parseFromString($env_content, $_ENV);
 
 // Access environment variables
-echo $_ENV['APP_NAME'];
-echo getenv('APP_ENV');
+echo $_ENV['APP_NAME'];    // via $_ENV
+echo getenv('APP_ENV');    // via getenv()
 ```
 
 **Your `.env` file:**
@@ -133,211 +126,50 @@ DB_HOST=localhost
 DB_PORT=3306
 ```
 
-#### Basic Usage
+#### Immutable Binding
+
+The plugin ensures existing environment variables are never overwritten:
 
 ```php
-use Zerotoprod\WebFramework\WebFramework;
-use Zerotoprod\WebFramework\Plugins\EnvParser;
-use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
-
-// Create an instance with your application's base path
-$framework = new WebFramework(__DIR__);
-
-// Read your .env file
-$env_content = file_get_contents(__DIR__ . '/.env');
-
-// Configure and run the environment loader
-$framework
-    ->setEnvParser(EnvParser::handle())
-    ->setEnvBinder(EnvBinderImmutable::handle())
-    ->setEnvContent($env_content)
-    ->bindEnv();
-
-// Access environment variables
-echo $_ENV['APP_NAME'];        // Access via $_ENV
-echo getenv('APP_ENV');        // Access via getenv()
-```
-
-**Your `.env` file:**
-```dotenv
-APP_NAME=MyApplication
-APP_ENV=production
-DB_HOST=localhost
-DB_PORT=3306
-```
-
-#### Method Chaining
-
-The builder pattern allows you to configure all options before executing with `bindEnv()`:
-
-```php
-$env_content = file_get_contents('/var/www/html/.env');
-
-$framework = (new WebFramework('/var/www/html'))
-    ->setEnvParser(EnvParser::handle())
-    ->setEnvBinder(EnvBinderImmutable::handle())
-    ->setEnvContent($env_content)
-    ->bindEnv();
-```
-
-#### Custom Target Environment
-
-You can specify a custom environment array for testing or isolation using `setEnvTarget()`:
-
-```php
-// Default: uses global $_ENV
-$framework = new WebFramework(__DIR__);
-$env_content = file_get_contents(__DIR__ . '/.env');
-$framework->setEnvDefaults($_ENV, $env_content)
-    ->bindEnv();
-
-// Custom: bind to your own array using setEnvDefaults()
-$customEnv = [];
-$env_content = file_get_contents(__DIR__ . '/.env');
-
-$framework = (new WebFramework(__DIR__))
-    ->setEnvDefaults($customEnv, $env_content)
-    ->bindEnv();
-
-// Variables are now in $customEnv instead of $_ENV
-echo $customEnv['APP_NAME'];
-
-// Alternative: use setEnvTarget() for more control
-$customEnv2 = [];
-$env_content2 = file_get_contents(__DIR__ . '/.env');
-
-$framework = (new WebFramework(__DIR__))
-    ->setEnvTarget($customEnv2)  // Pass by reference
-    ->setEnvParser(EnvParser::handle())
-    ->setEnvBinder(EnvBinderImmutable::handle())
-    ->setEnvContent($env_content2)
-    ->bindEnv();
-
-echo $customEnv2['APP_NAME'];
-
-// Note: $customEnv is passed by reference and will be modified directly
-```
-
-This is particularly useful for:
-- Unit testing without polluting the global environment
-- Isolating environment variables between different parts of your application
-- Creating multiple independent environment configurations
-
-#### Plugin System
-
-The framework uses a plugin-based architecture with first-party plugins included.
-
-##### First-Party Plugins
-
-**EnvParser** - Parses `.env` files:
-```php
-use Zerotoprod\WebFramework\Plugins\EnvParser;
-
-$framework->setEnvParser(EnvParser::handle());
-```
-
-**EnvBinderImmutable** - Binds variables without overwriting existing ones:
-```php
-use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
-
-$framework->setEnvBinder(EnvBinderImmutable::handle());
-```
-
-##### Custom Plugins
-
-You can create custom plugins by providing callables.
-
-**Custom Parser Plugin:**
-```php
-$framework = new WebFramework(__DIR__);
-$env_content = file_get_contents(__DIR__ . '/.env');
-
-$framework
-    ->setEnvParser(function (string $env_content): array {
-        // Custom parsing logic
-        $lines = explode("\n", $env_content);
-        $parsed_env = [];
-
-        foreach ($lines as $line) {
-            if (strpos($line, '=') !== false) {
-                list($key, $value) = explode('=', $line, 2);
-                $parsed_env[trim($key)] = trim($value);
-            }
-        }
-
-        return $parsed_env;
-    })
-    ->setEnvBinder(EnvBinderImmutable::handle())
-    ->setEnvContent($env_content)
-    ->bindEnv();
-```
-
-**Custom Binder Plugin:**
-```php
-$framework = new WebFramework(__DIR__);
-$env_content = file_get_contents(__DIR__ . '/.env');
-
-$framework
-    ->setEnvParser(EnvParser::handle())
-    ->setEnvBinder(function (array $parsed_env, array &$target_env): void {
-        // Custom binding logic - only bind APP_* variables
-        foreach ($parsed_env as $key => $value) {
-            if (strpos($key, 'APP_') === 0) {
-                $target_env[$key] = $value;
-                putenv("$key=$value");
-            }
-        }
-    })
-    ->setEnvContent($env_content)
-    ->bindEnv();
-```
-
-#### Immutable Environment Variables
-
-The `EnvBinderImmutable` plugin ensures that existing environment variables are never overwritten:
-
-```php
-use Zerotoprod\WebFramework\Plugins\EnvParser;
-use Zerotoprod\WebFramework\Plugins\EnvBinderImmutable;
-
-// Set an existing environment variable
+// Set an existing variable
 $_ENV['APP_ENV'] = 'development';
 putenv('APP_ENV=development');
 
-// Attempt to load from .env file (containing APP_ENV=production)
-$env_content = file_get_contents(__DIR__ . '/.env');
+// Load from .env file (containing APP_ENV=production)
+$env_content = "APP_ENV=production\nDB_HOST=localhost";
+EnvBinderImmutable::parseFromString($env_content, $_ENV);
 
-$framework = (new WebFramework(__DIR__))
-    ->setEnvParser(EnvParser::handle())
-    ->setEnvBinder(EnvBinderImmutable::handle())
-    ->setEnvContent($env_content)
-    ->bindEnv();
-
-// The original value is preserved
+// Original value is preserved
 echo $_ENV['APP_ENV'];  // Outputs: development (not production)
+echo $_ENV['DB_HOST'];  // Outputs: localhost (newly added)
 ```
 
-This immutability applies to variables that exist in either:
-- The `$_ENV` superglobal array
-- The system environment (accessible via `getenv()`)
+Variables are protected if they exist in either `$_ENV` or `getenv()`.
 
-**Use Case:** This behavior is useful for:
-- Overriding configuration in different environments
-- Respecting system-level environment variables
-- Preventing accidental overwrites of critical settings
+#### Custom Target Array
 
-#### Order Independence
-
-Configuration methods can be called in any order - only `bindEnv()` executes the workflow:
+Use a custom array instead of `$_ENV` for testing or isolation:
 
 ```php
-$content = file_get_contents('.env');
+$custom_env = [];
+$env_content = file_get_contents(__DIR__ . '/.env');
 
-// These are equivalent:
-$framework->setEnvParser(EnvParser::handle())->setEnvBinder(EnvBinderImmutable::handle())->setEnvContent($content)
-    ->bindEnv();
-$framework->setEnvBinder(EnvBinderImmutable::handle())->setEnvParser(EnvParser::handle())->setEnvContent($content)
-    ->bindEnv();
+EnvBinderImmutable::parseFromString($env_content, $custom_env);
+
+// Variables are in $custom_env, not $_ENV
+echo $custom_env['APP_NAME'];
+```
+
+#### Return Value
+
+The method returns the parsed array for inspection:
+
+```php
+$env_content = "APP_NAME=MyApp\nDB_HOST=localhost";
+$parsed = EnvBinderImmutable::parseFromString($env_content, $_ENV);
+
+// $parsed contains all parsed variables
+// ['APP_NAME' => 'MyApp', 'DB_HOST' => 'localhost']
 ```
 
 ### HTTP Routing
