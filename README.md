@@ -630,19 +630,43 @@ $router->fallback(function ($log) {
 
 For improved performance in production environments, you can compile routes once and cache them for subsequent requests. This eliminates the overhead of route definition on every request.
 
+##### ⚠️ Important: Closure Limitation
+
+**Routes with closures cannot be cached** because PHP closures cannot be serialized. When using route caching, you must use one of these cacheable formats:
+
+✅ **Cacheable route types:**
+- Controller arrays: `[UserController::class, 'index']`
+- Invokeable classes: `UserController::class`
+- String responses: `'Hello World'`
+
+❌ **Non-cacheable route types:**
+- Closures: `function () { echo 'Hello'; }`
+
+```php
+// ❌ NOT CACHEABLE - Will throw RuntimeException
+$router->get('/users', function () {
+    echo 'Users';
+});
+$router->compileRoutes(); // RuntimeException: Cannot compile routes with closures
+
+// ✅ CACHEABLE - Use controllers instead
+$router->get('/users', [UserController::class, 'index']);
+$router->get('/posts', PostController::class); // Invokeable controller
+$router->get('/', 'Home Page'); // String response
+$router->compileRoutes(); // Success!
+```
+
+**Best Practice:** Use controllers in production when route caching is enabled. Reserve closures for development/testing only.
+
 ##### Compiling Routes
 
 Use the `compileRoutes()` method to generate a cacheable data structure:
 
 ```php
-// Define routes once
+// Define routes once (using cacheable formats)
 $router = new HandleRoute('GET', '/');
-$router->get('/users', function () {
-    echo 'Users';
-});
-$router->get('/users/{id}', function ($params) {
-    echo 'User: ' . $params['id'];
-});
+$router->get('/users', [UserController::class, 'index']);
+$router->get('/users/{id}', [UserController::class, 'show']);
 $router->post('/users', [UserController::class, 'create']);
 
 // Compile routes to array
@@ -653,6 +677,41 @@ file_put_contents(
     'cache/routes.php',
     '<?php return ' . var_export($compiled, true) . ';'
 );
+```
+
+##### Checking Route Cacheability
+
+Use the `isCacheable()` method to verify all routes can be cached before compiling:
+
+```php
+$router = new HandleRoute('GET', '/');
+$router->get('/users', [UserController::class, 'index']);
+$router->get('/posts', function () {
+    echo 'Posts'; // Closure - not cacheable!
+});
+
+if ($router->isCacheable()) {
+    // Safe to compile
+    $compiled = $router->compileRoutes();
+    file_put_contents('cache/routes.php', '<?php return ' . var_export($compiled, true) . ';');
+} else {
+    // Some routes contain closures - cannot cache
+    echo "Warning: Routes contain closures and cannot be cached\n";
+}
+```
+
+**Tip:** Use `isCacheable()` in your build process to detect closure usage before deployment:
+
+```php
+// build-cache.php
+$router = require 'routes/web.php';
+
+if (!$router->isCacheable()) {
+    throw new Exception('Cannot build route cache: Routes contain closures. Use controllers instead.');
+}
+
+file_put_contents('cache/routes.php', '<?php return ' . var_export($router->compileRoutes(), true) . ';');
+echo "✓ Route cache built successfully\n";
 ```
 
 ##### Loading Cached Routes

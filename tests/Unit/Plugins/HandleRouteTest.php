@@ -69,6 +69,24 @@ class InvokeableWithoutOutput
     }
 }
 
+class UserController
+{
+    public function index(): void
+    {
+        echo 'User list';
+    }
+}
+
+class DynamicControllerMultiParams
+{
+    public static $received_params = null;
+
+    public function handle($params): void
+    {
+        self::$received_params = $params;
+    }
+}
+
 class HandleRouteTest extends TestCase
 {
     protected function setUp(): void
@@ -83,6 +101,7 @@ class HandleRouteTest extends TestCase
         DynamicController::$received_params = null;
         InvokeableDynamicController::$received_params = null;
         CacheTestController::$executed = false;
+        DynamicControllerMultiParams::$received_params = null;
     }
     /** @test */
     public function can_instantiate_with_method_and_uri(): void
@@ -1385,8 +1404,7 @@ class HandleRouteTest extends TestCase
     public function compile_routes_returns_array_with_static_and_dynamic_keys(): void
     {
         $router = new HandleRoute('GET', '/');
-        $router->get('/users', function () {
-        });
+        $router->get('/users', [UserController::class, 'index']);
         $router->get('/posts', 'Posts Page');
 
         $compiled = $router->compileRoutes();
@@ -1400,27 +1418,20 @@ class HandleRouteTest extends TestCase
     public function compile_routes_includes_static_routes_in_correct_format(): void
     {
         $router = new HandleRoute('GET', '/');
-        $router->get('/users', function () {
-            echo 'Users';
-        });
-        $router->post('/submit', function () {
-            echo 'Submit';
-        });
+        $router->get('/users', [TestController::class, 'show']);
+        $router->post('/submit', [TestController::class, 'create']);
 
         $compiled = $router->compileRoutes();
 
         $this->assertArrayHasKey('GET:/users', $compiled['static']);
         $this->assertArrayHasKey('POST:/submit', $compiled['static']);
-        $this->assertIsCallable($compiled['static']['GET:/users']);
-        $this->assertIsCallable($compiled['static']['POST:/submit']);
     }
 
     /** @test */
     public function compile_routes_includes_dynamic_routes_in_correct_format(): void
     {
         $router = new HandleRoute('GET', '/');
-        $router->get('/users/{id}', function () {
-        });
+        $router->get('/users/{id}', [DynamicController::class, 'show']);
 
         $compiled = $router->compileRoutes();
 
@@ -1440,12 +1451,9 @@ class HandleRouteTest extends TestCase
     {
         $router = new HandleRoute('GET', '/');
         $router->get('/home', 'Home Page');
-        $router->get('/users/{id}', function () {
-        });
-        $router->post('/submit', function () {
-        });
-        $router->delete('/posts/{postId}', function () {
-        });
+        $router->get('/users/{id}', [DynamicController::class, 'show']);
+        $router->post('/submit', [TestController::class, 'create']);
+        $router->delete('/posts/{postId}', [DynamicController::class, 'show']);
 
         $compiled = $router->compileRoutes();
 
@@ -1543,13 +1551,9 @@ class HandleRouteTest extends TestCase
     /** @test */
     public function compile_and_set_cached_routes_round_trip(): void
     {
-        $executed = false;
-
         // First router: define routes and compile
         $router1 = new HandleRoute('GET', '/');
-        $router1->get('/test', function () use (&$executed) {
-            $executed = true;
-        });
+        $router1->get('/test', [TestController::class, 'index']);
         $compiled = $router1->compileRoutes();
 
         // Second router: load compiled routes
@@ -1557,19 +1561,15 @@ class HandleRouteTest extends TestCase
         $router2->setCachedRoutes($compiled);
         $router2->dispatch();
 
-        $this->assertTrue($executed);
+        $this->assertEquals(1, TestController::$call_count);
     }
 
     /** @test */
     public function compile_and_set_cached_dynamic_routes_round_trip(): void
     {
-        $received_params = null;
-
         // First router: define routes and compile
         $router1 = new HandleRoute('GET', '/');
-        $router1->get('/users/{userId}/posts/{postId}', function ($params) use (&$received_params) {
-            $received_params = $params;
-        });
+        $router1->get('/users/{userId}/posts/{postId}', [DynamicControllerMultiParams::class, 'handle']);
         $compiled = $router1->compileRoutes();
 
         // Second router: load compiled routes
@@ -1577,7 +1577,7 @@ class HandleRouteTest extends TestCase
         $router2->setCachedRoutes($compiled);
         $router2->dispatch();
 
-        $this->assertEquals(['userId' => '42', 'postId' => '99'], $received_params);
+        $this->assertEquals(['userId' => '42', 'postId' => '99'], DynamicControllerMultiParams::$received_params);
     }
 
     /** @test */
@@ -1718,6 +1718,207 @@ class HandleRouteTest extends TestCase
         $compiled = $router->compileRoutes();
 
         $this->assertEquals(['static' => [], 'dynamic' => []], $compiled);
+    }
+
+    /** @test */
+    public function is_cacheable_returns_true_for_controller_arrays(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', [TestController::class, 'index']);
+        $router->post('/users', [TestController::class, 'store']);
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_true_for_invokeable_controllers(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', InvokeableController::class);
+        $router->get('/posts', InvokeableWithoutOutput::class);
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_true_for_string_responses(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/status', 'OK');
+        $router->get('/version', 'v1.0.0');
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_true_for_mixed_cacheable_types(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', [TestController::class, 'index']);
+        $router->get('/home', InvokeableController::class);
+        $router->get('/status', 'OK');
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_false_for_static_route_with_closure(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', function () {
+            echo 'Users';
+        });
+
+        $this->assertFalse($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_false_for_dynamic_route_with_closure(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users/{id}', function ($params) {
+            echo $params['id'];
+        });
+
+        $this->assertFalse($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_false_for_mixed_routes_with_one_closure(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', [TestController::class, 'index']);
+        $router->get('/posts', function () {
+            echo 'Posts';
+        });
+
+        $this->assertFalse($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_true_for_empty_router(): void
+    {
+        $router = new HandleRoute('GET', '/');
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function compile_routes_succeeds_with_controller_arrays(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', [TestController::class, 'index']);
+        $router->post('/users', [TestController::class, 'store']);
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertIsArray($compiled);
+        $this->assertArrayHasKey('static', $compiled);
+        $this->assertCount(2, $compiled['static']);
+    }
+
+    /** @test */
+    public function compile_routes_succeeds_with_invokeable_controllers(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/home', InvokeableController::class);
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertIsArray($compiled);
+        $this->assertCount(1, $compiled['static']);
+    }
+
+    /** @test */
+    public function compile_routes_succeeds_with_string_responses(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/status', 'OK');
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertIsArray($compiled);
+        $this->assertCount(1, $compiled['static']);
+    }
+
+    /** @test */
+    public function compile_routes_throws_exception_with_static_closure(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot compile routes with closures for caching');
+
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', function () {
+            echo 'Users';
+        });
+
+        $router->compileRoutes();
+    }
+
+    /** @test */
+    public function compile_routes_throws_exception_with_dynamic_closure(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Closures cannot be serialized in PHP');
+
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users/{id}', function ($params) {
+            echo $params['id'];
+        });
+
+        $router->compileRoutes();
+    }
+
+    /** @test */
+    public function compile_routes_throws_exception_with_mixed_routes(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Use controller arrays');
+
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users', [TestController::class, 'index']);
+        $router->get('/posts', function () {
+            echo 'Posts';
+        });
+
+        $router->compileRoutes();
+    }
+
+    /** @test */
+    public function compile_routes_exception_message_includes_solution(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('invokeable classes');
+
+        $router = new HandleRoute('GET', '/');
+        $router->get('/test', function () {
+        });
+
+        $router->compileRoutes();
+    }
+
+    /** @test */
+    public function is_cacheable_with_dynamic_routes_using_controllers(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users/{id}', [DynamicController::class, 'show']);
+        $router->get('/posts/{slug}', InvokeableDynamicController::class);
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function compile_routes_succeeds_with_dynamic_controller_routes(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users/{id}', [DynamicController::class, 'show']);
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertIsArray($compiled);
+        $this->assertCount(1, $compiled['dynamic']);
+        $this->assertEquals('GET', $compiled['dynamic'][0]['method']);
+        $this->assertEquals('/users/{id}', $compiled['dynamic'][0]['pattern']);
     }
 }
 

@@ -261,14 +261,14 @@ class HandleRoute
     }
 
     /**
-     * Normalize action to callable, validating at definition time.
+     * Validate action format and return it unchanged for cacheability.
      *
-     * Aggressively optimized for performance: 80% reduction (5 checks → 1 check).
-     * Uses fail-fast validation - invalid types will trigger PHP errors rather than silent failure.
+     * Stores actions in their original format to support route caching.
+     * Actions are validated but not converted to closures.
      *
-     * @param  callable|array|string|null  $action  The action to normalize
+     * @param  callable|array|string|null  $action  The action to validate
      *
-     * @return callable|null  Normalized callable or null
+     * @return callable|array|string|null  Validated action in original format
      */
     private function normalizeAction($action)
     {
@@ -276,31 +276,59 @@ class HandleRoute
             return null;
         }
 
+        // Check arrays first (controller arrays)
+        if (is_array($action) && isset($action[0], $action[1]) && !isset($action[2])) {
+            return $action;
+        }
+
+        // Check strings next (invokeable classes and plain strings)
+        if (is_string($action)) {
+            return $action;
+        }
+
+        // Finally check callables (closures and other callables)
         if (is_callable($action)) {
             return $action;
         }
 
+        return null;
+    }
+
+    /**
+     * Execute an action with the provided arguments.
+     *
+     * Handles execution of different action types:
+     * - Closures and callables: Called directly
+     * - Controller arrays [Class, 'method']: Instantiates class and calls method
+     * - Invokeable classes 'ClassName': Instantiates and invokes
+     * - String responses: Echoes the string
+     *
+     * @param  callable|array|string  $action  The action to execute
+     * @param  array                  $args    Arguments to pass to the action
+     *
+     * @return void
+     */
+    private function executeAction($action, array $args): void
+    {
+        if (is_callable($action)) {
+            $action(...$args);
+            return;
+        }
+
+        if (is_array($action)) {
+            [$class, $method] = $action;
+            call_user_func([new $class(), $method], ...$args);
+            return;
+        }
+
         if (is_string($action)) {
             if (method_exists($action, '__invoke')) {
-                return static function (...$args) use ($action) {
-                    (new $action())(...$args);
-                };
+                (new $action())(...$args);
+                return;
             }
 
-            return static function () use ($action) {
-                echo $action;
-            };
+            echo $action;
         }
-
-        if (is_array($action) && isset($action[0], $action[1]) && !isset($action[2])) {
-            [$class, $method] = $action;
-
-            return static function (...$args) use ($class, $method) {
-                call_user_func([new $class(), $method], ...$args);
-            };
-        }
-
-        return null;
     }
 
     /**
@@ -322,7 +350,7 @@ class HandleRoute
 
         // Check static routes first (O(1))
         if (isset($this->routes['static'][$key])) {
-            $this->routes['static'][$key](...$this->args);
+            $this->executeAction($this->routes['static'][$key], $this->args);
 
             return true;
         }
@@ -333,7 +361,7 @@ class HandleRoute
                 array_shift($matches);
 
                 $params = array_combine($route['params'], $matches);
-                $route['action']($params, ...$this->args);
+                $this->executeAction($route['action'], array_merge([$params], $this->args));
 
                 return true;
             }
@@ -341,7 +369,7 @@ class HandleRoute
 
         // Fallback handler
         if ($this->not_found_handler !== null) {
-            ($this->not_found_handler)(...$this->args);
+            $this->executeAction($this->not_found_handler, $this->args);
 
             return true;
         }
@@ -350,26 +378,91 @@ class HandleRoute
     }
 
     /**
+     * Check if all routes are cacheable (no closures).
+     *
+     * Routes with closures cannot be cached because closures cannot be serialized
+     * in PHP. Only routes using controller arrays [Controller::class, 'method']
+     * or invokeable classes Controller::class can be cached.
+     *
+     * Example:
+     * ```php
+     * $router = new HandleRoute('GET', '/');
+     * $router->get('/users', [UserController::class, 'index']);  // Cacheable
+     * $router->get('/posts', function () {});  // Not cacheable
+     *
+     * if ($router->isCacheable()) {
+     *     file_put_contents('cache/routes.php', '<?php return ' . var_export($router->compileRoutes(), true) . ';');
+     * }
+     * ```
+     *
+     * @return bool  True if all routes are cacheable, false if any closures are present
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function isCacheable(): bool
+    {
+        foreach ($this->routes['static'] as $action) {
+            if ($action instanceof \Closure) {
+                return false;
+            }
+        }
+
+        foreach ($this->routes['dynamic'] as $route) {
+            if ($route['action'] instanceof \Closure) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Compile all routes into a cacheable data structure.
      *
      * Returns an array containing both static and dynamic routes that can be
      * serialized and cached for improved performance across requests.
      *
+     * **Important:** Only routes using controller arrays or invokeable classes
+     * can be cached. Routes with closures cannot be serialized and will cause
+     * this method to throw a RuntimeException.
+     *
+     * Cacheable route types:
+     * - Controller arrays: [UserController::class, 'index']
+     * - Invokeable classes: UserController::class
+     * - String responses: 'Hello World'
+     *
+     * Non-cacheable route types:
+     * - Closures: function () { echo 'Hello'; }
+     *
      * Example:
      * ```php
      * $router = new HandleRoute('GET', '/');
-     * $router->get('/users', function () {});
-     * $router->get('/users/{id}', function ($params) {});
-     * $compiled = $router->compileRoutes();
-     * file_put_contents('cache/routes.php', '<?php return ' . var_export($compiled, true) . ';');
+     * $router->get('/users', [UserController::class, 'index']);
+     * $router->get('/users/{id}', [UserController::class, 'show']);
+     *
+     * if ($router->isCacheable()) {
+     *     $compiled = $router->compileRoutes();
+     *     file_put_contents('cache/routes.php', '<?php return ' . var_export($compiled, true) . ';');
+     * }
      * ```
      *
      * @return array  Compiled routes structure with 'static' and 'dynamic' keys
+     *
+     * @throws \RuntimeException  If any routes contain closures that cannot be cached
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function compileRoutes(): array
     {
+        if (!$this->isCacheable()) {
+            throw new \RuntimeException(
+                'Cannot compile routes with closures for caching. ' .
+                'Closures cannot be serialized in PHP. ' .
+                'Use controller arrays [Controller::class, \'method\'] or ' .
+                'invokeable classes Controller::class instead.'
+            );
+        }
+
         return $this->routes;
     }
 
