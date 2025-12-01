@@ -44,6 +44,13 @@ class HandleRoute
     private $matched_route = null;
 
     /**
+     * Fallback handler for 404 (not found) responses.
+     *
+     * @var callable|null
+     */
+    private $not_found_handler = null;
+
+    /**
      * Create a new HandleRoute instance.
      *
      * @param  array  $serverTarget  Reference to server array (typically $_SERVER)
@@ -202,6 +209,25 @@ class HandleRoute
     }
 
     /**
+     * Define a fallback handler for 404 (not found) responses.
+     *
+     * This handler is executed when no route matches the request.
+     * The handler receives the server array as a parameter.
+     *
+     * @param  callable|array|string|null  $action  The action to execute for 404 responses
+     *
+     * @return HandleRoute  Returns $this for method chaining
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function fallback($action = null): HandleRoute
+    {
+        $this->not_found_handler = $this->normalizeAction($action);
+
+        return $this;
+    }
+
+    /**
      * Normalize action to callable, validating at definition time.
      *
      * Aggressively optimized for performance: 80% reduction (5 checks → 1 check).
@@ -249,8 +275,9 @@ class HandleRoute
      *
      * This is the hot path - optimized for maximum performance.
      * No iteration, no conditionals beyond the hash lookup.
+     * If no route matches and a fallback handler is defined, executes the fallback.
      *
-     * @return bool  True if route was matched and executed, false otherwise
+     * @return bool  True if route or fallback was executed, false otherwise
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
@@ -261,6 +288,12 @@ class HandleRoute
         if (isset($this->routes[$key])) {
             $this->matched_route = $key;
             $this->routes[$key]($this->serverTarget);
+
+            return true;
+        }
+
+        if ($this->not_found_handler !== null) {
+            ($this->not_found_handler)($this->serverTarget);
 
             return true;
         }
