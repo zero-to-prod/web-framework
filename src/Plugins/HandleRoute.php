@@ -2,6 +2,8 @@
 
 namespace Zerotoprod\WebFramework\Plugins;
 
+use RuntimeException;
+
 /**
  * High-performance HTTP routing with O(1) constant-time route matching.
  *
@@ -244,19 +246,11 @@ class HandleRoute
      */
     private function compilePattern(string $pattern): array
     {
-        $params = [];
+        preg_match_all('/\{([a-zA-Z_]+w*)}/', $pattern, $matches);
 
         return [
-            'regex' => '#^'.preg_replace_callback(
-                    '/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/',
-                    static function ($matches) use (&$params) {
-                        $params[] = $matches[1];
-
-                        return '([^/]+)';
-                    },
-                    $pattern
-                ).'$#',
-            'params' => $params
+            'regex' => '#^'.str_replace($matches[0], array_fill(0, count($matches[0]), '([^/]+)'), $pattern).'$#',
+            'params' => $matches[1]
         ];
     }
 
@@ -297,12 +291,6 @@ class HandleRoute
     /**
      * Execute an action with the provided arguments.
      *
-     * Handles execution of different action types:
-     * - Closures and callables: Called directly
-     * - Controller arrays [Class, 'method']: Instantiates class and calls method
-     * - Invokeable classes 'ClassName': Instantiates and invokes
-     * - String responses: Echoes the string
-     *
      * @param  callable|array|string  $action  The action to execute
      * @param  array                  $args    Arguments to pass to the action
      *
@@ -310,25 +298,25 @@ class HandleRoute
      */
     private function executeAction($action, array $args): void
     {
-        if (is_callable($action)) {
-            $action(...$args);
-            return;
-        }
-
         if (is_array($action)) {
-            [$class, $method] = $action;
-            call_user_func([new $class(), $method], ...$args);
+            (new $action[0]())->{$action[1]}(...$args);
+
             return;
         }
 
         if (is_string($action)) {
             if (method_exists($action, '__invoke')) {
                 (new $action())(...$args);
+
                 return;
             }
 
             echo $action;
+
+            return;
         }
+
+        $action(...$args);
     }
 
     /**
@@ -355,19 +343,19 @@ class HandleRoute
             return true;
         }
 
-        // Check dynamic routes (O(n))
+        // Check dynamic routes (O(n)) - method check before expensive regex
         foreach ($this->routes['dynamic'] as $route) {
-            if ($route['method'] === $this->request_method && preg_match($route['regex'], $this->request_path, $matches)) {
-                array_shift($matches);
+            if ($route['method'] !== $this->request_method) {
+                continue;
+            }
 
-                $params = array_combine($route['params'], $matches);
-                $this->executeAction($route['action'], array_merge([$params], $this->args));
+            if (preg_match($route['regex'], $this->request_path, $matches)) {
+                $this->executeAction($route['action'], array_merge([array_combine($route['params'], array_slice($matches, 1))], $this->args));
 
                 return true;
             }
         }
 
-        // Fallback handler
         if ($this->not_found_handler !== null) {
             $this->executeAction($this->not_found_handler, $this->args);
 
@@ -448,17 +436,17 @@ class HandleRoute
      *
      * @return array  Compiled routes structure with 'static' and 'dynamic' keys
      *
-     * @throws \RuntimeException  If any routes contain closures that cannot be cached
+     * @throws RuntimeException  If any routes contain closures that cannot be cached
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function compileRoutes(): array
     {
         if (!$this->isCacheable()) {
-            throw new \RuntimeException(
-                'Cannot compile routes with closures for caching. ' .
-                'Closures cannot be serialized in PHP. ' .
-                'Use controller arrays [Controller::class, \'method\'] or ' .
+            throw new RuntimeException(
+                'Cannot compile routes with closures for caching. '.
+                'Closures cannot be serialized in PHP. '.
+                'Use controller arrays [Controller::class, \'method\'] or '.
                 'invokeable classes Controller::class instead.'
             );
         }
