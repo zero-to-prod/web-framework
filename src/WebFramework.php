@@ -86,6 +86,9 @@ class WebFramework
         return $this;
     }
 
+    /**
+     * @link https://github.com/zero-to-prod/web-framework
+     */
     public function setContainer(ContainerInterface $Container): WebFramework
     {
         $this->Container = $Container;
@@ -93,6 +96,9 @@ class WebFramework
         return $this;
     }
 
+    /**
+     * @link https://github.com/zero-to-prod/web-framework
+     */
     public function context(callable $callable): WebFramework
     {
         $callable($this);
@@ -100,6 +106,9 @@ class WebFramework
         return $this;
     }
 
+    /**
+     * @link https://github.com/zero-to-prod/web-framework
+     */
     public function container(): ContainerInterface
     {
         return $this->Container;
