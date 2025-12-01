@@ -3,6 +3,7 @@
 namespace Zerotoprod\WebFramework\Plugins;
 
 /**
+ * High-performance HTTP routing with O(1) constant-time route matching.
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
@@ -16,18 +17,18 @@ class HandleRoute
     private $routes = [];
 
     /**
-     * Reference to the server array (typically $_SERVER).
+     * Copy of the server array (typically $_SERVER).
      *
      * @var array
      */
-    private $serverTarget;
+    private $server;
 
     /**
      * Cached request method.
      *
      * @var string
      */
-    private $request_method;
+    private $REQUEST_METHOD;
 
     /**
      * Cached request path (query string stripped).
@@ -37,13 +38,6 @@ class HandleRoute
     private $request_path;
 
     /**
-     * The matched and executed route key, or null if no match.
-     *
-     * @var string|null
-     */
-    private $matched_route = null;
-
-    /**
      * Fallback handler for 404 (not found) responses.
      *
      * @var callable|null
@@ -51,31 +45,28 @@ class HandleRoute
     private $not_found_handler = null;
 
     /**
+     * Additional arguments to pass to the action.
+     *
+     * @var array
+     */
+    private $args;
+
+    /**
      * Create a new HandleRoute instance.
      *
-     * @param  array  $serverTarget  Reference to server array (typically $_SERVER)
+     * @param  array  $server   Server array (typically $_SERVER)
+     * @param  mixed  ...$args  Additional arguments to pass to the action
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(array &$serverTarget)
+    public function __construct(array $server, ...$args)
     {
-        $this->serverTarget = &$serverTarget;
-        $this->request_method = $serverTarget['REQUEST_METHOD'] ?? '';
-        $this->request_path = $this->parsePath($serverTarget['REQUEST_URI'] ?? '');
-    }
+        $this->server = $server;
+        $this->args = $args;
+        $this->REQUEST_METHOD = $server['REQUEST_METHOD'] ?? '';
 
-    /**
-     * Parse URI path, stripping query string.
-     *
-     * @param  string  $uri  The URI to parse
-     *
-     * @return string  The parsed path (empty string if parsing fails)
-     */
-    private function parsePath(string $uri): string
-    {
-        $path = strtok($uri, '?');
-
-        return $path !== false ? $path : '';
+        $path = strtok($server['REQUEST_URI'] ?? '', '?');
+        $this->request_path = $path !== false ? $path : '';
     }
 
     /**
@@ -249,8 +240,8 @@ class HandleRoute
 
         if (is_string($action)) {
             if (method_exists($action, '__invoke')) {
-                return static function ($server) use ($action) {
-                    (new $action())($server);
+                return static function ($server, ...$args) use ($action) {
+                    (new $action())($server, ...$args);
                 };
             }
 
@@ -262,8 +253,8 @@ class HandleRoute
         if (is_array($action) && isset($action[0], $action[1]) && !isset($action[2])) {
             [$class, $method] = $action;
 
-            return static function ($server) use ($class, $method) {
-                call_user_func([new $class(), $method], $server);
+            return static function ($server, ...$args) use ($class, $method) {
+                call_user_func([new $class(), $method], $server, ...$args);
             };
         }
 
@@ -283,47 +274,20 @@ class HandleRoute
      */
     public function dispatch(): bool
     {
-        $key = $this->request_method.':'.$this->request_path;
+        $key = $this->REQUEST_METHOD.':'.$this->request_path;
 
         if (isset($this->routes[$key])) {
-            $this->matched_route = $key;
-            $this->routes[$key]($this->serverTarget);
+            $this->routes[$key]($this->server, ...$this->args);
 
             return true;
         }
 
         if ($this->not_found_handler !== null) {
-            ($this->not_found_handler)($this->serverTarget);
+            ($this->not_found_handler)($this->server, ...$this->args);
 
             return true;
         }
 
         return false;
-    }
-
-    /**
-     * Check if a route has been matched.
-     *
-     * @return bool
-     * @link https://github.com/zero-to-prod/web-framework
-     */
-    public function hasMatched(): bool
-    {
-        return $this->matched_route !== null;
-    }
-
-    /**
-     * Reset the matched state and reparse request data.
-     *
-     * @return HandleRoute  Returns $this for method chaining
-     * @link https://github.com/zero-to-prod/web-framework
-     */
-    public function reset(): HandleRoute
-    {
-        $this->matched_route = null;
-        $this->request_method = $this->serverTarget['REQUEST_METHOD'] ?? '';
-        $this->request_path = $this->parsePath($this->serverTarget['REQUEST_URI'] ?? '');
-
-        return $this;
     }
 }

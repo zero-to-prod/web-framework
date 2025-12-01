@@ -89,6 +89,8 @@ class HandleRouteTest extends TestCase
         InvokeableController::$invoked = false;
         InvokeableController::$received_server = null;
         InvokeableWithoutOutput::$invoked = false;
+        TestControllerWithArgs::$received_args = [];
+        InvokeableControllerWithArgs::$received_arg = null;
     }
     /** @test */
     public function can_instantiate_with_server_target(): void
@@ -493,120 +495,6 @@ class HandleRouteTest extends TestCase
     }
 
     /** @test */
-    public function has_matched_returns_true_when_route_matched(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/home',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/home', function () {
-        })->dispatch();
-
-        $this->assertTrue($router->hasMatched());
-    }
-
-    /** @test */
-    public function has_matched_returns_false_when_no_route_matched(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/home',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/about', function () {
-        });
-
-        $this->assertFalse($router->hasMatched());
-    }
-
-    /** @test */
-    public function reset_clears_matched_state(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/home',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/home', function () {
-        })->dispatch();
-
-        $this->assertTrue($router->hasMatched());
-
-        $router->reset();
-
-        $this->assertFalse($router->hasMatched());
-    }
-
-    /** @test */
-    public function reset_returns_instance_for_chaining(): void
-    {
-        $server = [];
-        $router = new HandleRoute($server);
-
-        $result = $router->reset();
-
-        $this->assertSame($router, $result);
-    }
-
-    /** @test */
-    public function reset_allows_routes_to_match_again(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/home',
-        ];
-        $first_count = 0;
-        $second_count = 0;
-
-        $router = new HandleRoute($server);
-
-        $router->get('/home', function () use (&$first_count) {
-            $first_count++;
-        })->dispatch();
-
-        $router->reset();
-
-        $router->get('/home', function () use (&$second_count) {
-            $second_count++;
-        })->dispatch();
-
-        $this->assertEquals(1, $first_count);
-        $this->assertEquals(1, $second_count);
-    }
-
-    /** @test */
-    public function route_maintains_reference_to_server_array(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/initial',
-        ];
-        $initial_executed = false;
-        $updated_executed = false;
-
-        $router = new HandleRoute($server);
-
-        $router->get('/initial', function () use (&$initial_executed) {
-            $initial_executed = true;
-        })->dispatch();
-
-        $this->assertTrue($initial_executed);
-
-        $server['REQUEST_URI'] = '/updated';
-        $router->reset();
-
-        $router->get('/updated', function () use (&$updated_executed) {
-            $updated_executed = true;
-        })->dispatch();
-
-        $this->assertTrue($updated_executed);
-    }
-
-    /** @test */
     public function route_handles_root_path(): void
     {
         $server = [
@@ -926,47 +814,6 @@ class HandleRouteTest extends TestCase
     }
 
     /** @test */
-    public function controller_instantiated_each_time_route_matches(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/test',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/test', [TestController::class, 'index'])->dispatch();
-
-        $this->assertEquals(1, TestController::$call_count);
-
-        $router->reset();
-        $router->get('/test', [TestController::class, 'index'])->dispatch();
-
-        $this->assertEquals(2, TestController::$call_count);
-    }
-
-    /** @test */
-    public function controller_array_syntax_works_with_reset(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/home',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/home', [TestController::class, 'index'])->dispatch();
-
-        $this->assertTrue($router->hasMatched());
-
-        $router->reset();
-
-        $this->assertFalse($router->hasMatched());
-
-        $router->get('/home', [TestController::class, 'store'])->dispatch();
-
-        $this->assertEquals(2, TestController::$call_count);
-    }
-
-    /** @test */
     public function array_action_with_null_does_not_execute(): void
     {
         $server = [
@@ -1066,22 +913,6 @@ class HandleRouteTest extends TestCase
         $this->assertArrayHasKey('QUERY_STRING', TestController::$received_server);
         $this->assertEquals('DELETE', TestController::$received_server['REQUEST_METHOD']);
         $this->assertEquals('custom_value', TestController::$received_server['HTTP_X_CUSTOM_HEADER']);
-    }
-
-    /** @test */
-    public function server_target_is_passed_by_reference_to_closure(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/test',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/test', function (&$srv) {
-            $srv['MODIFIED'] = 'true';
-        })->dispatch();
-
-        $this->assertEquals('true', $server['MODIFIED']);
     }
 
     /** @test */
@@ -1323,46 +1154,6 @@ class HandleRouteTest extends TestCase
         $router->get('/invoke', InvokeableController::class)->dispatch();
 
         $this->assertTrue(InvokeableController::$invoked);
-    }
-
-    /** @test */
-    public function invokeable_controller_instantiated_each_time_route_matches(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/invoke',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/invoke', InvokeableWithoutOutput::class)->dispatch();
-
-        $this->assertTrue(InvokeableWithoutOutput::$invoked);
-
-        InvokeableWithoutOutput::$invoked = false;
-
-        $router->reset();
-        $router->get('/invoke', InvokeableWithoutOutput::class)->dispatch();
-
-        $this->assertTrue(InvokeableWithoutOutput::$invoked);
-    }
-
-    /** @test */
-    public function invokeable_controller_works_with_reset(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/invoke',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->get('/invoke', InvokeableController::class)->dispatch();
-
-        $this->assertTrue($router->hasMatched());
-        $this->assertTrue(InvokeableController::$invoked);
-
-        $router->reset();
-
-        $this->assertFalse($router->hasMatched());
     }
 
     /** @test */
@@ -1661,48 +1452,6 @@ class HandleRouteTest extends TestCase
     }
 
     /** @test */
-    public function has_matched_returns_false_when_only_fallback_executes(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/unknown',
-        ];
-
-        $router = new HandleRoute($server);
-        $router->fallback(function () {
-        })->dispatch();
-
-        $this->assertFalse($router->hasMatched());
-    }
-
-    /** @test */
-    public function fallback_works_with_reset(): void
-    {
-        $server = [
-            'REQUEST_METHOD' => 'GET',
-            'REQUEST_URI' => '/unknown',
-        ];
-        $first_fallback_count = 0;
-        $second_fallback_count = 0;
-
-        $router = new HandleRoute($server);
-
-        $router->fallback(function () use (&$first_fallback_count) {
-            $first_fallback_count++;
-        })->dispatch();
-
-        $this->assertEquals(1, $first_fallback_count);
-
-        $router->reset();
-
-        $router->fallback(function () use (&$second_fallback_count) {
-            $second_fallback_count++;
-        })->dispatch();
-
-        $this->assertEquals(1, $second_fallback_count);
-    }
-
-    /** @test */
     public function fallback_handles_different_http_methods_when_no_routes_match(): void
     {
         $server = [
@@ -1851,5 +1600,141 @@ class HandleRouteTest extends TestCase
             ->dispatch();
 
         $this->assertTrue($fallback_executed);
+    }
+
+    /** @test */
+    public function closure_receives_single_additional_argument(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+        $received_arg = null;
+
+        $router = new HandleRoute($server, 'custom_value');
+        $router->get('/test', function ($srv, $arg) use (&$received_arg) {
+            $received_arg = $arg;
+        })->dispatch();
+
+        $this->assertEquals('custom_value', $received_arg);
+    }
+
+    /** @test */
+    public function closure_receives_multiple_additional_arguments(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+        $received_args = [];
+
+        $router = new HandleRoute($server, 'arg1', 'arg2', 'arg3');
+        $router->get('/test', function ($srv, ...$args) use (&$received_args) {
+            $received_args = $args;
+        })->dispatch();
+
+        $this->assertEquals(['arg1', 'arg2', 'arg3'], $received_args);
+    }
+
+    /** @test */
+    public function closure_receives_object_as_additional_argument(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+        $dependency = new \stdClass();
+        $dependency->value = 'test_value';
+        $received_dependency = null;
+
+        $router = new HandleRoute($server, $dependency);
+        $router->get('/test', function ($srv, $dep) use (&$received_dependency) {
+            $received_dependency = $dep;
+        })->dispatch();
+
+        $this->assertSame($dependency, $received_dependency);
+        $this->assertEquals('test_value', $received_dependency->value);
+    }
+
+    /** @test */
+    public function controller_array_syntax_receives_additional_arguments(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server, 'extra_arg1', 'extra_arg2');
+        $router->get('/test', [TestControllerWithArgs::class, 'handleWithArgs'])->dispatch();
+
+        $this->assertEquals(['extra_arg1', 'extra_arg2'], TestControllerWithArgs::$received_args);
+    }
+
+    /** @test */
+    public function invokeable_controller_receives_additional_arguments(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+
+        $router = new HandleRoute($server, 'arg_value');
+        $router->get('/test', InvokeableControllerWithArgs::class)->dispatch();
+
+        $this->assertEquals('arg_value', InvokeableControllerWithArgs::$received_arg);
+    }
+
+    /** @test */
+    public function fallback_receives_additional_arguments(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+        $received_arg = null;
+
+        $router = new HandleRoute($server, 'fallback_arg');
+        $router->fallback(function ($srv, $arg) use (&$received_arg) {
+            $received_arg = $arg;
+        })->dispatch();
+
+        $this->assertEquals('fallback_arg', $received_arg);
+    }
+
+    /** @test */
+    public function no_additional_arguments_works_correctly(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/test',
+        ];
+        $executed = false;
+
+        $router = new HandleRoute($server);
+        $router->get('/test', function ($srv) use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertTrue($executed);
+    }
+}
+
+class TestControllerWithArgs
+{
+    public static $received_args = [];
+
+    public function handleWithArgs($server, ...$args): void
+    {
+        self::$received_args = $args;
+    }
+}
+
+class InvokeableControllerWithArgs
+{
+    public static $received_arg = null;
+
+    public function __invoke($server, $arg = null): void
+    {
+        self::$received_arg = $arg;
     }
 }

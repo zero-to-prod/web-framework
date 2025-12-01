@@ -40,10 +40,10 @@
         - [Supported HTTP Methods](#supported-http-methods)
         - [Action Types](#action-types)
         - [Accessing Request Data](#accessing-request-data)
+        - [Additional Arguments](#additional-arguments)
+        - [404 Fallback Handler](#404-fallback-handler)
         - [Method Chaining](#method-chaining-1)
         - [Route Matching](#route-matching)
-        - [Checking for Matches](#checking-for-matches)
-        - [Resetting Router State](#resetting-router-state)
         - [Advanced: Duplicate Routes](#advanced-duplicate-routes)
         - [Performance Characteristics](#performance-characteristics)
         - [Complete Example](#complete-example)
@@ -377,14 +377,101 @@ $router->post('/api/data', function ($server) {
 });
 ```
 
-The server array is passed by reference, allowing modifications:
+#### Additional Arguments
+
+You can pass additional arguments to all route handlers via the constructor. This is useful for dependency injection or passing context objects:
 
 ```php
-$router->get('/test', function (&$server) {
-    $server['CUSTOM_DATA'] = 'modified';
+// Pass dependencies to the router
+$database = new Database();
+$logger = new Logger();
+
+$router = new HandleRoute($_SERVER, $database, $logger);
+
+// All handlers receive these arguments after $server
+$router->get('/users', function ($server, $db, $log) {
+    $log->info('Fetching users');
+    $users = $db->query('SELECT * FROM users');
+    echo json_encode($users);
 });
 
-echo $_SERVER['CUSTOM_DATA']; // 'modified'
+// Works with controller arrays too
+class UserController {
+    public function index($server, $db, $logger) {
+        $logger->info('UserController::index called');
+        return $db->fetchAll('users');
+    }
+}
+
+$router->get('/api/users', [UserController::class, 'index']);
+
+// Works with invokeable controllers
+class ApiController {
+    public function __invoke($server, $db) {
+        return $db->query('SELECT * FROM api_data');
+    }
+}
+
+$router->get('/api/data', ApiController::class);
+```
+
+**Single dependency example:**
+
+```php
+$container = new DependencyContainer();
+$router = new HandleRoute($_SERVER, $container);
+
+$router->get('/service', function ($server, $container) {
+    $service = $container->get('MyService');
+    $service->handle();
+});
+```
+
+#### 404 Fallback Handler
+
+Define a fallback handler for unmatched routes (404 responses):
+
+```php
+$router = new HandleRoute($_SERVER);
+
+// Define your routes
+$router->get('/', 'Home Page');
+$router->get('/about', 'About Us');
+
+// Define fallback for all unmatched routes
+$router->fallback(function ($server) {
+    http_response_code(404);
+    echo '404 - Page Not Found';
+    echo '<br>Requested: ' . $server['REQUEST_URI'];
+});
+
+// Dispatch will execute fallback if no route matches
+$router->dispatch();
+```
+
+**Fallback with controller:**
+
+```php
+class NotFoundController {
+    public function __invoke($server) {
+        http_response_code(404);
+        include 'views/404.php';
+    }
+}
+
+$router->fallback(NotFoundController::class);
+```
+
+**Fallback also receives additional arguments:**
+
+```php
+$logger = new Logger();
+$router = new HandleRoute($_SERVER, $logger);
+
+$router->fallback(function ($server, $log) {
+    $log->warning('404: ' . $server['REQUEST_URI']);
+    echo '404 - Not Found';
+});
 ```
 
 #### Method Chaining
@@ -426,41 +513,6 @@ $router->get('/search', function ($server) {
     // This route matches!
     // Access query string via $server['QUERY_STRING']
 });
-```
-
-#### Checking for Matches
-
-```php
-$router->get('/home', function () {
-    echo 'Home page';
-})->dispatch();
-
-if ($router->hasMatched()) {
-    echo 'Route was found and executed';
-} else {
-    echo '404 - Not Found';
-}
-```
-
-#### Resetting Router State
-
-The `reset()` method clears the matched state and re-parses the server array:
-
-```php
-$router = new HandleRoute($_SERVER);
-
-$router->get('/first', function () {
-    echo 'First route';
-})->dispatch();
-
-// Modify the server array
-$_SERVER['REQUEST_URI'] = '/second';
-$router->reset();
-
-// Define and dispatch new route
-$router->get('/second', function () {
-    echo 'Second route';
-})->dispatch();
 ```
 
 #### Advanced: Duplicate Routes
@@ -540,13 +592,11 @@ $router
             'timestamp' => time()
         ]);
     })
+    ->fallback(function ($server) {
+        http_response_code(404);
+        echo '404 - Page Not Found';
+    })
     ->dispatch();
-
-// Handle 404
-if (!$router->hasMatched()) {
-    http_response_code(404);
-    echo '404 - Page Not Found';
-}
 ```
 
 ## Contributing
