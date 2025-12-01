@@ -10,18 +10,18 @@ namespace Zerotoprod\WebFramework\Plugins;
 class HandleRoute
 {
     /**
-     * Compiled static route map for O(1) lookups: "METHOD:PATH" => callable
+     * Compiled routes data structure containing both static and dynamic routes.
      *
-     * @var array<string, callable>
-     */
-    private $routes = [];
-
-    /**
-     * Dynamic routes with parameters: [['method' => 'GET', 'pattern' => '/users/{id}', 'regex' => '...', 'params' => [...], 'action' => callable], ...]
+     * Structure:
+     * - 'static': Hash map for O(1) lookups: "METHOD:PATH" => callable
+     * - 'dynamic': Array of dynamic route configs: [['method' => 'GET', 'pattern' => '/users/{id}', 'regex' => '...', 'params' => [...], 'action' => callable], ...]
      *
      * @var array
      */
-    private $dynamic_routes = [];
+    private $routes = [
+        'static' => [],
+        'dynamic' => []
+    ];
 
     /**
      * HTTP method for the current request.
@@ -94,7 +94,7 @@ class HandleRoute
 
         if (strpos($uri, '{') !== false) {
             $compiled = $this->compilePattern($uri);
-            $this->dynamic_routes[] = [
+            $this->routes['dynamic'][] = [
                 'method' => $method,
                 'pattern' => $uri,
                 'regex' => $compiled['regex'],
@@ -102,7 +102,7 @@ class HandleRoute
                 'action' => $normalized
             ];
         } else {
-            $this->routes[$method.':'.$uri] = $normalized;
+            $this->routes['static'][$method.':'.$uri] = $normalized;
         }
 
         return $this;
@@ -321,14 +321,14 @@ class HandleRoute
         $key = $this->request_method.':'.$this->request_path;
 
         // Check static routes first (O(1))
-        if (isset($this->routes[$key])) {
-            $this->routes[$key](...$this->args);
+        if (isset($this->routes['static'][$key])) {
+            $this->routes['static'][$key](...$this->args);
 
             return true;
         }
 
         // Check dynamic routes (O(n))
-        foreach ($this->dynamic_routes as $route) {
+        foreach ($this->routes['dynamic'] as $route) {
             if ($route['method'] === $this->request_method && preg_match($route['regex'], $this->request_path, $matches)) {
                 array_shift($matches);
 
@@ -347,5 +347,62 @@ class HandleRoute
         }
 
         return false;
+    }
+
+    /**
+     * Compile all routes into a cacheable data structure.
+     *
+     * Returns an array containing both static and dynamic routes that can be
+     * serialized and cached for improved performance across requests.
+     *
+     * Example:
+     * ```php
+     * $router = new HandleRoute('GET', '/');
+     * $router->get('/users', function () {});
+     * $router->get('/users/{id}', function ($params) {});
+     * $compiled = $router->compileRoutes();
+     * file_put_contents('cache/routes.php', '<?php return ' . var_export($compiled, true) . ';');
+     * ```
+     *
+     * @return array  Compiled routes structure with 'static' and 'dynamic' keys
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function compileRoutes(): array
+    {
+        return $this->routes;
+    }
+
+    /**
+     * Set pre-compiled routes from cache.
+     *
+     * Allows you to bypass route definition and use pre-compiled routes for improved performance.
+     * The routes array should be in the format returned by compileRoutes().
+     *
+     * Example:
+     * ```php
+     * $compiled = include 'cache/routes.php';
+     * $router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+     * $router->setCachedRoutes($compiled);
+     * $router->dispatch();
+     * ```
+     *
+     * @param  array  $routes  Compiled routes array with 'static' and 'dynamic' keys
+     *
+     * @return HandleRoute  Returns $this for method chaining
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function setCachedRoutes(array $routes): HandleRoute
+    {
+        if (isset($routes['static']) && is_array($routes['static'])) {
+            $this->routes['static'] = $routes['static'];
+        }
+
+        if (isset($routes['dynamic']) && is_array($routes['dynamic'])) {
+            $this->routes['dynamic'] = $routes['dynamic'];
+        }
+
+        return $this;
     }
 }
