@@ -1462,4 +1462,394 @@ class HandleRouteTest extends TestCase
         $this->assertEquals(TestController::class, $output);
         $this->assertEquals(0, TestController::$call_count);
     }
+
+    /** @test */
+    public function fallback_returns_instance_for_chaining(): void
+    {
+        $server = [];
+        $router = new HandleRoute($server);
+
+        $result = $router->fallback(function () {
+        });
+
+        $this->assertSame($router, $result);
+    }
+
+    /** @test */
+    public function fallback_executes_when_no_route_matches(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/nonexistent',
+        ];
+        $fallback_executed = false;
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/home', function () {
+            })
+            ->fallback(function () use (&$fallback_executed) {
+                $fallback_executed = true;
+            })
+            ->dispatch();
+
+        $this->assertTrue($fallback_executed);
+    }
+
+    /** @test */
+    public function fallback_does_not_execute_when_route_matches(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/home',
+        ];
+        $fallback_executed = false;
+        $route_executed = false;
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/home', function () use (&$route_executed) {
+                $route_executed = true;
+            })
+            ->fallback(function () use (&$fallback_executed) {
+                $fallback_executed = true;
+            })
+            ->dispatch();
+
+        $this->assertTrue($route_executed);
+        $this->assertFalse($fallback_executed);
+    }
+
+    /** @test */
+    public function fallback_receives_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+            'HTTP_HOST' => 'example.com',
+            'CUSTOM_KEY' => 'custom_value',
+        ];
+        $received_server = null;
+
+        $router = new HandleRoute($server);
+        $router
+            ->fallback(function ($srv) use (&$received_server) {
+                $received_server = $srv;
+            })
+            ->dispatch();
+
+        $this->assertNotNull($received_server);
+        $this->assertEquals($server, $received_server);
+        $this->assertEquals('example.com', $received_server['HTTP_HOST']);
+        $this->assertEquals('custom_value', $received_server['CUSTOM_KEY']);
+    }
+
+    /** @test */
+    public function fallback_outputs_string_when_action_is_string(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/notfound',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->fallback('404 - Page Not Found')->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('404 - Page Not Found', $output);
+    }
+
+    /** @test */
+    public function fallback_accepts_controller_array_syntax(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/missing',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->fallback([TestController::class, 'index'])->dispatch();
+
+        $this->assertEquals(1, TestController::$call_count);
+    }
+
+    /** @test */
+    public function fallback_accepts_invokeable_controller(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/404',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->fallback(InvokeableController::class)->dispatch();
+
+        $this->assertTrue(InvokeableController::$invoked);
+    }
+
+    /** @test */
+    public function fallback_with_null_does_nothing(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/missing',
+        ];
+
+        $router = new HandleRoute($server);
+
+        ob_start();
+        $router->fallback(null)->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('', $output);
+    }
+
+    /** @test */
+    public function dispatch_returns_true_when_fallback_executes(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->fallback(function () {
+        });
+
+        $result = $router->dispatch();
+
+        $this->assertTrue($result);
+    }
+
+    /** @test */
+    public function dispatch_returns_false_when_no_route_and_no_fallback(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->get('/home', function () {
+        });
+
+        $result = $router->dispatch();
+
+        $this->assertFalse($result);
+    }
+
+    /** @test */
+    public function dispatch_returns_true_when_route_matches_ignoring_fallback(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/home',
+        ];
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/home', function () {
+            })
+            ->fallback(function () {
+            });
+
+        $result = $router->dispatch();
+
+        $this->assertTrue($result);
+    }
+
+    /** @test */
+    public function has_matched_returns_false_when_only_fallback_executes(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->fallback(function () {
+        })->dispatch();
+
+        $this->assertFalse($router->hasMatched());
+    }
+
+    /** @test */
+    public function fallback_works_with_reset(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+        $first_fallback_count = 0;
+        $second_fallback_count = 0;
+
+        $router = new HandleRoute($server);
+
+        $router->fallback(function () use (&$first_fallback_count) {
+            $first_fallback_count++;
+        })->dispatch();
+
+        $this->assertEquals(1, $first_fallback_count);
+
+        $router->reset();
+
+        $router->fallback(function () use (&$second_fallback_count) {
+            $second_fallback_count++;
+        })->dispatch();
+
+        $this->assertEquals(1, $second_fallback_count);
+    }
+
+    /** @test */
+    public function fallback_handles_different_http_methods_when_no_routes_match(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/submit',
+        ];
+        $fallback_executed = false;
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/submit', function () {
+            })
+            ->fallback(function () use (&$fallback_executed) {
+                $fallback_executed = true;
+            })
+            ->dispatch();
+
+        $this->assertTrue($fallback_executed);
+    }
+
+    /** @test */
+    public function fallback_can_be_defined_before_routes(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+        $fallback_executed = false;
+
+        $router = new HandleRoute($server);
+        $router
+            ->fallback(function () use (&$fallback_executed) {
+                $fallback_executed = true;
+            })
+            ->get('/home', function () {
+            })
+            ->dispatch();
+
+        $this->assertTrue($fallback_executed);
+    }
+
+    /** @test */
+    public function last_fallback_definition_wins(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/unknown',
+        ];
+        $first_executed = false;
+        $second_executed = false;
+
+        $router = new HandleRoute($server);
+        $router
+            ->fallback(function () use (&$first_executed) {
+                $first_executed = true;
+            })
+            ->fallback(function () use (&$second_executed) {
+                $second_executed = true;
+            })
+            ->dispatch();
+
+        $this->assertFalse($first_executed);
+        $this->assertTrue($second_executed);
+    }
+
+    /** @test */
+    public function fallback_with_empty_server_array(): void
+    {
+        $server = [];
+        $fallback_executed = false;
+
+        $router = new HandleRoute($server);
+        $router->fallback(function () use (&$fallback_executed) {
+            $fallback_executed = true;
+        })->dispatch();
+
+        $this->assertTrue($fallback_executed);
+    }
+
+    /** @test */
+    public function fallback_controller_receives_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/missing',
+            'HTTP_HOST' => 'example.com',
+            'SERVER_PORT' => '8080',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->fallback([TestController::class, 'index'])->dispatch();
+
+        $this->assertNotNull(TestController::$received_server);
+        $this->assertEquals($server, TestController::$received_server);
+        $this->assertEquals('example.com', TestController::$received_server['HTTP_HOST']);
+        $this->assertEquals('8080', TestController::$received_server['SERVER_PORT']);
+    }
+
+    /** @test */
+    public function fallback_invokeable_controller_receives_server_target(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/404',
+            'HTTP_HOST' => 'example.com',
+            'CUSTOM_HEADER' => 'value',
+        ];
+
+        $router = new HandleRoute($server);
+        $router->fallback(InvokeableController::class)->dispatch();
+
+        $this->assertNotNull(InvokeableController::$received_server);
+        $this->assertEquals($server, InvokeableController::$received_server);
+        $this->assertEquals('example.com', InvokeableController::$received_server['HTTP_HOST']);
+        $this->assertEquals('value', InvokeableController::$received_server['CUSTOM_HEADER']);
+    }
+
+    /** @test */
+    public function fallback_chains_with_all_http_methods(): void
+    {
+        $server = [
+            'REQUEST_METHOD' => 'DELETE',
+            'REQUEST_URI' => '/unknown',
+        ];
+        $fallback_executed = false;
+
+        $router = new HandleRoute($server);
+        $router
+            ->get('/home', function () {
+            })
+            ->post('/submit', function () {
+            })
+            ->put('/update', function () {
+            })
+            ->patch('/partial', function () {
+            })
+            ->delete('/remove', function () {
+            })
+            ->options('/opts', function () {
+            })
+            ->head('/head', function () {
+            })
+            ->fallback(function () use (&$fallback_executed) {
+                $fallback_executed = true;
+            })
+            ->dispatch();
+
+        $this->assertTrue($fallback_executed);
+    }
 }
