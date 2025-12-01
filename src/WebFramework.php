@@ -72,6 +72,22 @@ class WebFramework
     }
 
     /**
+     * Get the target environment array for binding.
+     *
+     * @return array
+     * @throws RuntimeException If env is not set
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function getEnv(): array
+    {
+        if ($this->env === null) {
+            throw new RuntimeException('Env not set');
+        }
+
+        return $this->env;
+    }
+
+    /**
      * Set the target server array for binding.
      *
      * @param  array  $server
@@ -85,6 +101,22 @@ class WebFramework
         $this->server = &$server;
 
         return $this;
+    }
+
+    /**
+     * Get the target server array for binding.
+     *
+     * @return array
+     * @throws RuntimeException If server is not set
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function getServer(): array
+    {
+        if ($this->server === null) {
+            throw new RuntimeException('Server not set');
+        }
+
+        return $this->server;
     }
 
     /**
@@ -115,6 +147,7 @@ class WebFramework
         if ($this->Container === null) {
             throw new RuntimeException('Container not set');
         }
+
         return $this->Container;
     }
 }

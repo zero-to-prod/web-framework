@@ -26,9 +26,17 @@
         - [Immutable Binding](#immutable-binding)
         - [Custom Target Array](#custom-target-array)
         - [Return Value](#return-value)
-    - [HTTP Routing](#http-routing)
+    - [WebFramework Core](#webframework-core)
         - [Overview](#overview-1)
-        - [Quick Start](#quick-start-1)
+        - [Basic Usage](#basic-usage)
+        - [Environment Management](#environment-management)
+        - [Server Management](#server-management)
+        - [Container](#container)
+        - [Context Callback](#context-callback)
+        - [Method Chaining](#method-chaining)
+    - [HTTP Routing](#http-routing)
+        - [Overview](#overview-2)
+        - [Quick Start](#quick-start)
         - [Supported HTTP Methods](#supported-http-methods)
         - [Action Types](#action-types)
         - [Accessing Request Data](#accessing-request-data)
@@ -170,6 +178,95 @@ $parsed = EnvBinderImmutable::parseFromString($env_content, $_ENV);
 
 // $parsed contains all parsed variables
 // ['APP_NAME' => 'MyApp', 'DB_HOST' => 'localhost']
+```
+
+### WebFramework Core
+
+#### Overview
+
+The `WebFramework` class provides a central container for managing environment variables, server context, and dependency injection.
+
+#### Basic Usage
+
+```php
+use Zerotoprod\WebFramework\WebFramework;
+
+// Create framework instance
+$framework = new WebFramework(__DIR__);
+
+// Store environment and server arrays
+$framework->setEnv($_ENV);
+$framework->setServer($_SERVER);
+```
+
+#### Environment Management
+
+Store and retrieve environment arrays:
+
+```php
+$env = ['APP_ENV' => 'production'];
+$framework->setEnv($env);
+
+// Retrieve the environment array
+$stored_env = $framework->getEnv();
+// Returns: ['APP_ENV' => 'production']
+```
+
+**Note:** `getEnv()` throws `RuntimeException` if not set.
+
+#### Server Management
+
+Store and retrieve server arrays:
+
+```php
+$server = ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/'];
+$framework->setServer($server);
+
+// Retrieve the server array
+$stored_server = $framework->getServer();
+// Returns: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/']
+```
+
+**Note:** `getServer()` throws `RuntimeException` if not set.
+
+#### Container
+
+Store a PSR-11 container instance:
+
+```php
+$container = new YourContainer();
+$framework->setContainer($container);
+
+// Retrieve the container
+$stored_container = $framework->container();
+```
+
+**Note:** `container()` throws `RuntimeException` if not set.
+
+#### Context Callback
+
+Execute callbacks with the framework instance:
+
+```php
+$framework->context(function ($fw) {
+    // Access framework methods within callback
+    $env = $fw->getEnv();
+    $server = $fw->getServer();
+});
+```
+
+#### Method Chaining
+
+All setters return the framework instance for chaining:
+
+```php
+$framework = (new WebFramework(__DIR__))
+    ->setEnv($_ENV)
+    ->setServer($_SERVER)
+    ->setContainer($container)
+    ->context(function ($fw) {
+        // Configure something
+    });
 ```
 
 ### HTTP Routing

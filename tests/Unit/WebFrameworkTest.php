@@ -50,6 +50,29 @@ class WebFrameworkTest extends TestCase
     }
 
     /** @test */
+    public function get_env_returns_stored_env_array(): void
+    {
+        $env = ['APP_ENV' => 'testing', 'DB_HOST' => 'localhost'];
+        $framework = new WebFramework();
+        $framework->setEnv($env);
+
+        $result = $framework->getEnv();
+
+        $this->assertSame($env, $result);
+    }
+
+    /** @test */
+    public function get_env_throws_exception_when_not_set(): void
+    {
+        $framework = new WebFramework();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Env not set');
+
+        $framework->getEnv();
+    }
+
+    /** @test */
     public function set_server_stores_reference_and_returns_instance(): void
     {
         $server = ['REQUEST_METHOD' => 'GET'];
@@ -69,6 +92,29 @@ class WebFrameworkTest extends TestCase
         $result = $framework->setServer($server);
 
         $this->assertSame($framework, $result);
+    }
+
+    /** @test */
+    public function get_server_returns_stored_server_array(): void
+    {
+        $server = ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/api/users'];
+        $framework = new WebFramework();
+        $framework->setServer($server);
+
+        $result = $framework->getServer();
+
+        $this->assertSame($server, $result);
+    }
+
+    /** @test */
+    public function get_server_throws_exception_when_not_set(): void
+    {
+        $framework = new WebFramework();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Server not set');
+
+        $framework->getServer();
     }
 
     /** @test */
@@ -109,14 +155,14 @@ class WebFrameworkTest extends TestCase
     }
 
     /** @test */
-    public function container_when_not_set_returns_null(): void
+    public function container_throws_exception_when_not_set(): void
     {
-        $this->expectException(RuntimeException::class);
         $framework = new WebFramework();
 
-        $result = $framework->container();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Container not set');
 
-        $this->assertNull($result);
+        $framework->container();
     }
 
     /** @test */
