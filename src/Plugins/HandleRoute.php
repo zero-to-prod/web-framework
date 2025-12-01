@@ -10,28 +10,28 @@ namespace Zerotoprod\WebFramework\Plugins;
 class HandleRoute
 {
     /**
-     * Compiled route map for O(1) lookups: "METHOD:PATH" => callable
+     * Compiled static route map for O(1) lookups: "METHOD:PATH" => callable
      *
      * @var array<string, callable>
      */
     private $routes = [];
 
     /**
-     * Copy of the server array (typically $_SERVER).
+     * Dynamic routes with parameters: [['method' => 'GET', 'pattern' => '/users/{id}', 'regex' => '...', 'params' => [...], 'action' => callable], ...]
      *
      * @var array
      */
-    private $server;
+    private $dynamic_routes = [];
 
     /**
-     * Cached request method.
+     * HTTP method for the current request.
      *
      * @var string
      */
-    private $REQUEST_METHOD;
+    private $request_method;
 
     /**
-     * Cached request path (query string stripped).
+     * Request path (query string stripped).
      *
      * @var string
      */
@@ -54,29 +54,30 @@ class HandleRoute
     /**
      * Create a new HandleRoute instance.
      *
-     * @param  array  $server   Server array (typically $_SERVER)
-     * @param  mixed  ...$args  Additional arguments to pass to the action
+     * @param  string  $method   HTTP method (GET, POST, etc.)
+     * @param  string  $uri      Request URI (query string will be stripped)
+     * @param  mixed   ...$args  Additional arguments to pass to the action
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(array $server, ...$args)
+    public function __construct(string $method, string $uri, ...$args)
     {
-        $this->server = $server;
         $this->args = $args;
-        $this->REQUEST_METHOD = $server['REQUEST_METHOD'] ?? '';
+        $this->request_method = $method;
 
-        $path = strtok($server['REQUEST_URI'] ?? '', '?');
+        $path = strtok($uri, '?');
         $this->request_path = $path !== false ? $path : '';
     }
 
     /**
      * Add a route to the route map.
      *
-     * This builds the hash map for O(1) lookups. Call this method for each route,
-     * then call dispatch() to execute the matched route.
+     * Automatically detects static vs dynamic routes:
+     * - Static routes (no {params}): Stored in hash map for O(1) lookups
+     * - Dynamic routes (with {params}): Compiled to regex and stored separately
      *
      * @param  string                      $method  HTTP method (GET, POST, etc.)
-     * @param  string                      $uri     URI pattern to match
+     * @param  string                      $uri     URI pattern to match (e.g., "/users/{id}")
      * @param  callable|array|string|null  $action  Action to execute
      *
      * @return HandleRoute  Returns $this for method chaining during definition
@@ -87,7 +88,20 @@ class HandleRoute
     {
         $normalized = $this->normalizeAction($action);
 
-        if ($normalized !== null) {
+        if ($normalized === null) {
+            return $this;
+        }
+
+        if (strpos($uri, '{') !== false) {
+            $compiled = $this->compilePattern($uri);
+            $this->dynamic_routes[] = [
+                'method' => $method,
+                'pattern' => $uri,
+                'regex' => $compiled['regex'],
+                'params' => $compiled['params'],
+                'action' => $normalized
+            ];
+        } else {
             $this->routes[$method.':'.$uri] = $normalized;
         }
 
@@ -219,6 +233,34 @@ class HandleRoute
     }
 
     /**
+     * Compile a dynamic route pattern to regex and extract parameter names.
+     *
+     * Converts patterns like "/users/{id}/posts/{slug}" to regex
+     * and extracts parameter names ['id', 'slug'].
+     *
+     * @param  string  $pattern  Route pattern with {param} placeholders
+     *
+     * @return array  ['regex' => compiled regex, 'params' => parameter names]
+     */
+    private function compilePattern(string $pattern): array
+    {
+        $params = [];
+
+        return [
+            'regex' => '#^'.preg_replace_callback(
+                    '/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/',
+                    static function ($matches) use (&$params) {
+                        $params[] = $matches[1];
+
+                        return '([^/]+)';
+                    },
+                    $pattern
+                ).'$#',
+            'params' => $params
+        ];
+    }
+
+    /**
      * Normalize action to callable, validating at definition time.
      *
      * Aggressively optimized for performance: 80% reduction (5 checks → 1 check).
@@ -240,8 +282,8 @@ class HandleRoute
 
         if (is_string($action)) {
             if (method_exists($action, '__invoke')) {
-                return static function ($server, ...$args) use ($action) {
-                    (new $action())($server, ...$args);
+                return static function (...$args) use ($action) {
+                    (new $action())(...$args);
                 };
             }
 
@@ -253,8 +295,8 @@ class HandleRoute
         if (is_array($action) && isset($action[0], $action[1]) && !isset($action[2])) {
             [$class, $method] = $action;
 
-            return static function ($server, ...$args) use ($class, $method) {
-                call_user_func([new $class(), $method], $server, ...$args);
+            return static function (...$args) use ($class, $method) {
+                call_user_func([new $class(), $method], ...$args);
             };
         }
 
@@ -262,11 +304,13 @@ class HandleRoute
     }
 
     /**
-     * Dispatch the request using O(1) hash map lookup.
+     * Dispatch the request using O(1) hash map lookup for static routes,
+     * falling back to O(n) regex matching for dynamic routes.
      *
-     * This is the hot path - optimized for maximum performance.
-     * No iteration, no conditionals beyond the hash lookup.
-     * If no route matches and a fallback handler is defined, executes the fallback.
+     * Performance characteristics:
+     * - Static routes: O(1) constant time
+     * - Dynamic routes: O(n) where n is number of dynamic routes
+     * - Static routes are checked first for optimal performance
      *
      * @return bool  True if route or fallback was executed, false otherwise
      *
@@ -274,16 +318,30 @@ class HandleRoute
      */
     public function dispatch(): bool
     {
-        $key = $this->REQUEST_METHOD.':'.$this->request_path;
+        $key = $this->request_method.':'.$this->request_path;
 
+        // Check static routes first (O(1))
         if (isset($this->routes[$key])) {
-            $this->routes[$key]($this->server, ...$this->args);
+            $this->routes[$key](...$this->args);
 
             return true;
         }
 
+        // Check dynamic routes (O(n))
+        foreach ($this->dynamic_routes as $route) {
+            if ($route['method'] === $this->request_method && preg_match($route['regex'], $this->request_path, $matches)) {
+                array_shift($matches);
+
+                $params = array_combine($route['params'], $matches);
+                $route['action']($params, ...$this->args);
+
+                return true;
+            }
+        }
+
+        // Fallback handler
         if ($this->not_found_handler !== null) {
-            ($this->not_found_handler)($this->server, ...$this->args);
+            ($this->not_found_handler)(...$this->args);
 
             return true;
         }

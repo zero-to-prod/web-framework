@@ -40,6 +40,7 @@
         - [Supported HTTP Methods](#supported-http-methods)
         - [Action Types](#action-types)
         - [Accessing Request Data](#accessing-request-data)
+        - [Dynamic Routes](#dynamic-routes)
         - [Additional Arguments](#additional-arguments)
         - [404 Fallback Handler](#404-fallback-handler)
         - [Method Chaining](#method-chaining-1)
@@ -273,22 +274,26 @@ $framework = (new WebFramework(__DIR__))
 
 #### Overview
 
-The `HandleRoute` plugin provides high-performance HTTP routing with **O(1) constant-time route matching** using hash map lookups. This means routing performance remains constant regardless of the number of routes defined - whether you have 10 routes or 10,000 routes.
+The `HandleRoute` plugin provides high-performance HTTP routing with a hybrid approach:
+- **Static routes:** **O(1) constant-time** hash map lookups - performance remains constant regardless of route count
+- **Dynamic routes:** **O(n) regex matching** for routes with parameters like `/users/{id}`
+- Static routes are checked first, ensuring most requests hit the fast path
+- Supports both traditional static routing and RESTful dynamic parameters
 
 #### Quick Start
 
 ```php
 use Zerotoprod\WebFramework\Plugins\HandleRoute;
 
-// Create router with server array
-$router = new HandleRoute($_SERVER);
+// Create router with request method and URI
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 
 // Define routes
-$router->get('/users', function ($server) {
+$router->get('/users', function () {
     echo 'List of users';
 });
 
-$router->post('/users', function ($server) {
+$router->post('/users', function () {
     echo 'Create user';
 });
 
@@ -317,9 +322,9 @@ Routes support four types of actions:
 ##### 1. Closures
 
 ```php
-$router->get('/hello', function ($server) {
+$router->get('/hello', function () {
     echo "Hello, World!";
-    echo "Request method: " . $server['REQUEST_METHOD'];
+    echo "Request method: " . $_SERVER['REQUEST_METHOD'];
 });
 ```
 
@@ -327,11 +332,11 @@ $router->get('/hello', function ($server) {
 
 ```php
 class UserController {
-    public function index(array $server) {
+    public function index() {
         echo "User list";
     }
 
-    public function show(array $server) {
+    public function show() {
         echo "Show user";
     }
 }
@@ -344,9 +349,9 @@ $router->get('/users/show', [UserController::class, 'show']);
 
 ```php
 class HomeController {
-    public function __invoke(array $server) {
+    public function __invoke() {
         echo "<h1>Welcome Home</h1>";
-        echo "Visitor from: " . $server['REMOTE_ADDR'];
+        echo "Visitor from: " . $_SERVER['REMOTE_ADDR'];
     }
 }
 
@@ -362,19 +367,165 @@ $router->get('/version', 'v1.0.0');
 
 #### Accessing Request Data
 
-All actions receive the server array as their first parameter:
+Request data can be accessed directly from the global `$_SERVER` array within your route actions:
 
 ```php
-$router->post('/api/data', function ($server) {
-    $method = $server['REQUEST_METHOD'];  // POST
-    $uri = $server['REQUEST_URI'];        // /api/data
-    $host = $server['HTTP_HOST'];         // example.com
+$router->post('/api/data', function () {
+    $method = $_SERVER['REQUEST_METHOD'];  // POST
+    $uri = $_SERVER['REQUEST_URI'];        // /api/data
+    $host = $_SERVER['HTTP_HOST'];         // example.com
 
     // Access any $_SERVER data
-    if (isset($server['HTTP_AUTHORIZATION'])) {
-        $token = $server['HTTP_AUTHORIZATION'];
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $token = $_SERVER['HTTP_AUTHORIZATION'];
     }
 });
+```
+
+#### Dynamic Routes
+
+The router supports dynamic route parameters for building RESTful APIs and dynamic URL structures. Dynamic routes use `{parameter}` syntax and are automatically detected.
+
+**Performance note:** Static routes (without parameters) use O(1) hash map lookups, while dynamic routes use O(n) regex matching. The router checks static routes first for optimal performance.
+
+##### Single Parameter
+
+```php
+$router->get('/users/{id}', function ($params) {
+    echo "User ID: " . $params['id'];
+    // GET /users/123 → params = ['id' => '123']
+});
+
+$router->get('/posts/{slug}', function ($params) {
+    echo "Post: " . $params['slug'];
+    // GET /posts/my-blog-post → params = ['slug' => 'my-blog-post']
+});
+```
+
+##### Multiple Parameters
+
+```php
+$router->get('/users/{userId}/posts/{postId}', function ($params) {
+    $userId = $params['userId'];
+    $postId = $params['postId'];
+    echo "User $userId, Post $postId";
+    // GET /users/456/posts/789 → params = ['userId' => '456', 'postId' => '789']
+});
+
+$router->get('/api/v1/{resource}/{id}', function ($params) {
+    // GET /api/v1/products/abc123 → params = ['resource' => 'products', 'id' => 'abc123']
+});
+```
+
+##### With Controller Arrays
+
+```php
+class UserController {
+    public function show($params) {
+        $userId = $params['id'];
+        // Fetch and display user
+    }
+
+    public function updatePost($params) {
+        $userId = $params['userId'];
+        $postId = $params['postId'];
+        // Update post logic
+    }
+}
+
+$router->get('/users/{id}', [UserController::class, 'show']);
+$router->put('/users/{userId}/posts/{postId}', [UserController::class, 'updatePost']);
+```
+
+##### With Invokeable Controllers
+
+```php
+class ShowProduct {
+    public function __invoke($params) {
+        $sku = $params['sku'];
+        // Fetch and display product by SKU
+    }
+}
+
+$router->get('/products/{sku}', ShowProduct::class);
+```
+
+##### With Additional Arguments
+
+Dynamic routes work seamlessly with constructor arguments (dependency injection):
+
+```php
+$database = new Database();
+$logger = new Logger();
+
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $database, $logger);
+
+$router->get('/users/{id}', function ($params, $db, $log) {
+    $log->info("Fetching user " . $params['id']);
+    $user = $db->query("SELECT * FROM users WHERE id = ?", [$params['id']]);
+    echo json_encode($user);
+});
+```
+
+##### Parameter Matching Rules
+
+- **Alphanumeric + hyphens + underscores:** Parameters match `/([^/]+)/` - any characters except forward slashes
+- **Exact matching:** Route `/users/{id}` matches `/users/123` but NOT `/users/123/extra`
+- **Parameter names:** Must start with letter or underscore, can contain letters, numbers, underscores
+
+```php
+// Valid parameter names
+'/users/{id}'              // ✓
+'/posts/{post_id}'        // ✓
+'/articles/{slug123}'     // ✓
+
+// What parameters match
+'/users/123'              // ✓ Numbers
+'/users/abc'              // ✓ Letters
+'/posts/my-post-title'    // ✓ Hyphens
+'/api/v1.2.3'            // ✗ Dots stop at first slash
+```
+
+##### Static vs Dynamic Priority
+
+Static routes always take priority over dynamic routes:
+
+```php
+$router->get('/users/create', function () {
+    echo 'Create new user form';  // This executes for /users/create
+});
+
+$router->get('/users/{id}', function ($params) {
+    echo 'Show user: ' . $params['id'];  // This executes for /users/123, /users/456, etc.
+});
+
+// GET /users/create → "Create new user form" (static route wins)
+// GET /users/123    → "Show user: 123" (dynamic route matches)
+```
+
+##### Complete Example
+
+```php
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+
+// Static routes (O(1) lookup)
+$router->get('/', 'Homepage');
+$router->get('/about', 'About Us');
+
+// Dynamic routes (O(n) regex matching)
+$router->get('/users/{id}', [UserController::class, 'show']);
+$router->get('/users/{id}/edit', [UserController::class, 'edit']);
+$router->put('/users/{id}', [UserController::class, 'update']);
+$router->delete('/users/{id}', [UserController::class, 'destroy']);
+
+// Nested parameters
+$router->get('/orgs/{orgId}/teams/{teamId}', function ($params) {
+    $orgId = $params['orgId'];
+    $teamId = $params['teamId'];
+    // Fetch team from org
+});
+
+$router->dispatch();
 ```
 
 #### Additional Arguments
@@ -386,10 +537,10 @@ You can pass additional arguments to all route handlers via the constructor. Thi
 $database = new Database();
 $logger = new Logger();
 
-$router = new HandleRoute($_SERVER, $database, $logger);
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $database, $logger);
 
-// All handlers receive these arguments after $server
-$router->get('/users', function ($server, $db, $log) {
+// All handlers receive these arguments
+$router->get('/users', function ($db, $log) {
     $log->info('Fetching users');
     $users = $db->query('SELECT * FROM users');
     echo json_encode($users);
@@ -397,7 +548,7 @@ $router->get('/users', function ($server, $db, $log) {
 
 // Works with controller arrays too
 class UserController {
-    public function index($server, $db, $logger) {
+    public function index($db, $logger) {
         $logger->info('UserController::index called');
         return $db->fetchAll('users');
     }
@@ -407,7 +558,7 @@ $router->get('/api/users', [UserController::class, 'index']);
 
 // Works with invokeable controllers
 class ApiController {
-    public function __invoke($server, $db) {
+    public function __invoke($db) {
         return $db->query('SELECT * FROM api_data');
     }
 }
@@ -419,9 +570,9 @@ $router->get('/api/data', ApiController::class);
 
 ```php
 $container = new DependencyContainer();
-$router = new HandleRoute($_SERVER, $container);
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $container);
 
-$router->get('/service', function ($server, $container) {
+$router->get('/service', function ($container) {
     $service = $container->get('MyService');
     $service->handle();
 });
@@ -432,17 +583,17 @@ $router->get('/service', function ($server, $container) {
 Define a fallback handler for unmatched routes (404 responses):
 
 ```php
-$router = new HandleRoute($_SERVER);
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 
 // Define your routes
 $router->get('/', 'Home Page');
 $router->get('/about', 'About Us');
 
 // Define fallback for all unmatched routes
-$router->fallback(function ($server) {
+$router->fallback(function () {
     http_response_code(404);
     echo '404 - Page Not Found';
-    echo '<br>Requested: ' . $server['REQUEST_URI'];
+    echo '<br>Requested: ' . $_SERVER['REQUEST_URI'];
 });
 
 // Dispatch will execute fallback if no route matches
@@ -453,7 +604,7 @@ $router->dispatch();
 
 ```php
 class NotFoundController {
-    public function __invoke($server) {
+    public function __invoke() {
         http_response_code(404);
         include 'views/404.php';
     }
@@ -466,10 +617,10 @@ $router->fallback(NotFoundController::class);
 
 ```php
 $logger = new Logger();
-$router = new HandleRoute($_SERVER, $logger);
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $logger);
 
-$router->fallback(function ($server, $log) {
-    $log->warning('404: ' . $server['REQUEST_URI']);
+$router->fallback(function ($log) {
+    $log->warning('404: ' . $_SERVER['REQUEST_URI']);
     echo '404 - Not Found';
 });
 ```
@@ -479,13 +630,13 @@ $router->fallback(function ($server, $log) {
 Routes can be defined using method chaining:
 
 ```php
-$router = new HandleRoute($_SERVER);
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 
 $router
     ->get('/', 'Home Page')
     ->get('/about', 'About Us')
     ->get('/contact', 'Contact')
-    ->post('/contact', function ($server) {
+    ->post('/contact', function () {
         echo 'Processing contact form';
     })
     ->dispatch();
@@ -509,9 +660,9 @@ Query strings are automatically stripped:
 
 ```php
 // Request: GET /search?q=test&page=2
-$router->get('/search', function ($server) {
+$router->get('/search', function () {
     // This route matches!
-    // Access query string via $server['QUERY_STRING']
+    // Access query string via $_SERVER['QUERY_STRING']
 });
 ```
 
@@ -535,24 +686,46 @@ This provides predictable route override behavior.
 
 #### Performance Characteristics
 
-The routing implementation uses hash map lookups for **O(1) constant-time performance**:
+The routing implementation uses a hybrid approach for optimal performance:
 
-| Number of Routes | Lookup Time | Performance  |
-|------------------|-------------|--------------|
-| 10 routes        | 1 lookup    | **Constant** |
-| 100 routes       | 1 lookup    | **Constant** |
-| 1,000 routes     | 1 lookup    | **Constant** |
-| 10,000 routes    | 1 lookup    | **Constant** |
+**Static Routes:** Hash map lookups for **O(1) constant-time performance**
+
+| Number of Static Routes | Lookup Time | Performance  |
+|------------------------|-------------|--------------|
+| 10 routes              | 1 lookup    | **Constant** |
+| 100 routes             | 1 lookup    | **Constant** |
+| 1,000 routes           | 1 lookup    | **Constant** |
+| 10,000 routes          | 1 lookup    | **Constant** |
+
+**Dynamic Routes:** Regex matching for **O(n) linear performance**
+
+| Number of Dynamic Routes | Worst Case  | Performance |
+|-------------------------|-------------|-------------|
+| 5 routes                | 5 checks    | **Linear**  |
+| 10 routes               | 10 checks   | **Linear**  |
+| 50 routes               | 50 checks   | **Linear**  |
+
+**Dispatch Order:**
+1. Check static routes first (O(1)) - **Most common case, fastest**
+2. If no match, check dynamic routes (O(n)) - **RESTful APIs with parameters**
+3. If still no match, execute fallback handler
 
 **Key Benefits:**
-- No performance degradation as routes increase
-- Single hash lookup regardless of route count
+- Static routes: Zero performance degradation as count increases
+- Dynamic routes: Checked only when static routes don't match
 - Pre-validated actions eliminate runtime checks
-- Zero iteration overhead
+- Most applications use primarily static routes for best performance
 
-**Real-world impact:** At 1,000 requests/second with 200 routes:
-- Hash map router: **1,000 lookups/second**
-- Sequential router: **100,000 comparisons/second** (100x more operations)
+**Best Practices:**
+- Use static routes whenever possible (e.g., `/users/create` instead of making it a query param)
+- Static routes always take priority over dynamic routes
+- Keep dynamic routes under 50 for optimal performance
+- For high-traffic APIs, prefer static routes for hot paths
+
+**Real-world impact:** At 1,000 requests/second with 200 static + 20 dynamic routes:
+- Static route hit: **1 lookup** (O(1))
+- Dynamic route hit: **1 lookup + ~10 regex checks** (O(1) + O(n/2) average)
+- Sequential router: **110 comparisons average** (11x slower)
 
 #### Complete Example
 
@@ -560,25 +733,25 @@ The routing implementation uses hash map lookups for **O(1) constant-time perfor
 use Zerotoprod\WebFramework\Plugins\HandleRoute;
 
 class HomeController {
-    public function index(array $server) {
+    public function index() {
         echo "<h1>Welcome Home</h1>";
     }
 }
 
 class ApiController {
-    public function users(array $server) {
+    public function users() {
         header('Content-Type: application/json');
         echo json_encode(['users' => ['Alice', 'Bob']]);
     }
 
-    public function createUser(array $server) {
+    public function createUser() {
         header('Content-Type: application/json');
         echo json_encode(['message' => 'User created']);
     }
 }
 
 // Initialize router
-$router = new HandleRoute($_SERVER);
+$router = new HandleRoute($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 
 // Define routes
 $router
@@ -586,13 +759,13 @@ $router
     ->get('/api/users', [ApiController::class, 'users'])
     ->post('/api/users', [ApiController::class, 'createUser'])
     ->get('/about', 'About Us - Version 1.0')
-    ->get('/health', function ($server) {
+    ->get('/health', function () {
         echo json_encode([
             'status' => 'healthy',
             'timestamp' => time()
         ]);
     })
-    ->fallback(function ($server) {
+    ->fallback(function () {
         http_response_code(404);
         echo '404 - Page Not Found';
     })
