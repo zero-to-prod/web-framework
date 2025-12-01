@@ -3,6 +3,7 @@
 namespace Zerotoprod\WebFramework;
 
 use Psr\Container\ContainerInterface;
+use RuntimeException;
 
 /**
  * @link https://github.com/zero-to-prod/web-framework
@@ -111,6 +112,9 @@ class WebFramework
      */
     public function container(): ContainerInterface
     {
+        if ($this->Container === null) {
+            throw new RuntimeException('Container not set');
+        }
         return $this->Container;
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use Psr\Container\ContainerInterface;
+use RuntimeException;
 use Tests\TestCase;
 use Zerotoprod\WebFramework\WebFramework;
 
@@ -110,6 +111,7 @@ class WebFrameworkTest extends TestCase
     /** @test */
     public function container_when_not_set_returns_null(): void
     {
+        $this->expectException(RuntimeException::class);
         $framework = new WebFramework();
 
         $result = $framework->container();
