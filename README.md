@@ -304,6 +304,8 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 
 #### Supported HTTP Methods
 
+All HTTP method helpers return a `PendingRoute` instance for fluent chaining:
+
 ```php
 $routes->get('/resource', $action);      // GET requests
 $routes->post('/resource', $action);     // POST requests
@@ -313,6 +315,8 @@ $routes->delete('/resource', $action);   // DELETE requests
 $routes->options('/resource', $action);  // OPTIONS requests
 $routes->head('/resource', $action);     // HEAD requests
 ```
+
+Each method returns a `PendingRoute` object that allows you to chain additional configuration methods like `where()` and `name()`, or continue defining more routes.
 
 #### Action Types
 
@@ -478,11 +482,9 @@ $routes->get('/users/{id}', [UserController::class, 'show'])
 
 $routes->post('/users', [UserController::class, 'create'])
     ->name('users.create');
-
-// Access route name from Route object
-$route = $routes->matchRoute('GET', '/users/123');
-echo $route->name; // 'users.show'
 ```
+
+Route names are stored in the `HttpRoute` object and can be accessed when needed. The routing system automatically handles route matching during dispatch.
 
 #### Additional Arguments (Dependency Injection)
 
@@ -661,7 +663,7 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 
 #### Method Chaining
 
-Routes support fluent method chaining:
+Routes support fluent method chaining through the `PendingRoute` class:
 
 ```php
 use Zerotoprod\WebFramework\Routes;
@@ -680,6 +682,17 @@ $routes = Routes::collect()
 
 $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 ```
+
+**How it works:**
+- HTTP methods (`get()`, `post()`, etc.) return a `PendingRoute` instance
+- `PendingRoute` proxies HTTP methods back to `Routes`, allowing continuous chaining
+- Configuration methods (`where()`, `name()`) operate on `PendingRoute` and return self
+- Routes are automatically finalized when you define the next route or call a terminal method (`dispatch()`, `fallback()`)
+
+This allows you to:
+1. Define routes consecutively: `->get()->get()->post()`
+2. Configure individual routes: `->get()->where()->name()`
+3. Mix both patterns seamlessly in a single fluent chain
 
 #### Route Matching Behavior
 
