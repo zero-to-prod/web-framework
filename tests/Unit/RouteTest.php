@@ -1111,14 +1111,20 @@ class RouteTest extends TestCase
         $this->assertTrue($routes->hasRoute('GET', '/test'));
     }
 
-    /** @test */
-    public function execute_throws_exception_for_invalid_action_type(): void
+    /**
+     * @test
+     * Note: execute() is now private. Invalid action types are caught at route registration time,
+     * not at dispatch time. See tests for controller array validation below.
+     */
+    public function execute_method_is_private_and_not_part_of_public_api(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Action must be callable, controller array, or string');
-
         $routes = Routes::collect();
-        $routes->execute(12345, [], []);
+
+        // Verify execute() is not accessible from outside
+        $this->assertFalse(
+            (new \ReflectionMethod(Routes::class, 'execute'))->isPublic(),
+            'execute() should be private'
+        );
     }
 
     /** @test */

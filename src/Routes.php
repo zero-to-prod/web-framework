@@ -207,6 +207,9 @@ class Routes
     /**
      * Get all registered routes.
      *
+     * @internal This method is primarily for testing and debugging.
+     *           Production code should use dispatch() instead.
+     *
      * @return array  Array of Route objects
      * @link https://github.com/zero-to-prod/web-framework
      */
@@ -217,6 +220,9 @@ class Routes
 
     /**
      * Find matching route for method and URI.
+     *
+     * @internal This method is primarily for testing and debugging.
+     *           Production code should use dispatch() instead.
      *
      * @param  string  $method  HTTP method
      * @param  string  $uri     Request URI
@@ -246,6 +252,9 @@ class Routes
 
     /**
      * Check if route exists.
+     *
+     * @internal This method is primarily for testing and duplicate detection.
+     *           Not typically needed in production code.
      *
      * @param  string  $method   HTTP method
      * @param  string  $pattern  Route pattern
@@ -325,7 +334,9 @@ class Routes
 
     /**
      * Finalize a route by storing it in the collection.
-     * Called by PendingRoute when route is complete.
+     *
+     * @internal This method is intended for internal use by PendingRoute only.
+     *           Do not call directly. Use ->register() for explicit registration.
      *
      * @param  HttpRoute  $route  Route to store
      * @link https://github.com/zero-to-prod/web-framework
@@ -428,7 +439,7 @@ class Routes
      * @throws InvalidArgumentException  If action type is invalid
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function execute($action, array $params, array $args): void
+    private function execute($action, array $params, array $args): void
     {
         if (is_array($action)) {
             $this->executeControllerArray($action, $params, $args);
