@@ -207,6 +207,7 @@ class Routes
     /**
      * Get all registered routes.
      *
+     * @return array  Array of Route objects
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
@@ -219,7 +220,7 @@ class Routes
     }
 
     /**
-     * Find matching route for method and URI.
+     * Find a matching route for method and URI.
      *
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
@@ -228,7 +229,10 @@ class Routes
      * @param  string  $uri     Request URI
      *
      * @return HttpRoute|null  Matched route or null
-     * @link https://github.com/zero-to-prod/web-framework
+     * @internal This method is primarily for testing and debugging.
+     *           Production code should use dispatch() instead.
+     *
+     * @link     https://github.com/zero-to-prod/web-framework
      */
     public function matchRoute(string $method, string $uri): ?HttpRoute
     {
@@ -251,16 +255,16 @@ class Routes
     }
 
     /**
-     * Check if route exists.
-     *
-     * @internal This method is primarily for testing and duplicate detection.
-     *           Not typically needed in production code.
+     * Check if a route exists.
      *
      * @param  string  $method   HTTP method
      * @param  string  $pattern  Route pattern
      *
      * @return bool  True if route exists
-     * @link https://github.com/zero-to-prod/web-framework
+     * @internal This method is primarily for testing and duplicate detection.
+     *           Not typically needed in production code.
+     *
+     * @link     https://github.com/zero-to-prod/web-framework
      */
     public function hasRoute(string $method, string $pattern): bool
     {
@@ -303,11 +307,11 @@ class Routes
             );
         }
 
-        $routes_data = array_map(function ($route) {
-            return $route->toArray();
-        }, $this->routes);
-
-        return serialize($routes_data);
+        return serialize(
+            array_map(static function ($route) {
+                return $route->toArray();
+            }, $this->routes)
+        );
     }
 
     /**
@@ -335,11 +339,12 @@ class Routes
     /**
      * Finalize a route by storing it in the collection.
      *
+     * @param  HttpRoute  $route  Route to store
+     *
      * @internal This method is intended for internal use by PendingRoute only.
      *           Do not call directly. Use ->register() for explicit registration.
      *
-     * @param  HttpRoute  $route  Route to store
-     * @link https://github.com/zero-to-prod/web-framework
+     * @link     https://github.com/zero-to-prod/web-framework
      */
     public function finalizeRoute(HttpRoute $route): void
     {
@@ -360,8 +365,12 @@ class Routes
     private function addRoute(string $method, string $uri, $action): PendingRoute
     {
         if ($action === null) {
-            throw new InvalidArgumentException("Action cannot be null for route: {$method} {$uri}");
+            throw new InvalidArgumentException("Action cannot be null for route: $method $uri");
         }
+
+        $uri = $uri === '' || $uri[0] !== '/'
+            ? '/'.$uri
+            : $uri;
 
         $compiled = RouteCompiler::compile($uri);
 
@@ -442,13 +451,23 @@ class Routes
     private function execute($action, array $params, array $args): void
     {
         if (is_array($action)) {
-            $this->executeControllerArray($action, $params, $args);
+            if (!isset($action[0], $action[1]) || isset($action[2])) {
+                throw new InvalidArgumentException('Controller array must have exactly 2 elements: [Class, \'method\']');
+            }
+
+            (new $action[0]())->{$action[1]}($params, ...$args);
 
             return;
         }
 
         if (is_string($action)) {
-            $this->executeString($action, $params, $args);
+            if (method_exists($action, '__invoke')) {
+                (new $action())($params, ...$args);
+
+                return;
+            }
+
+            echo $action;
 
             return;
         }
@@ -458,42 +477,6 @@ class Routes
         }
 
         $action($params, ...$args);
-    }
-
-    /**
-     * Execute controller array action.
-     *
-     * @param  array  $action  Controller array [Class, 'method']
-     * @param  array  $params  Route parameters
-     * @param  array  $args    Additional arguments
-     *
-     * @throws InvalidArgumentException  If array format is invalid
-     */
-    private function executeControllerArray(array $action, array $params, array $args): void
-    {
-        if (!isset($action[0], $action[1]) || isset($action[2])) {
-            throw new InvalidArgumentException('Controller array must have exactly 2 elements: [Class, \'method\']');
-        }
-
-        (new $action[0]())->{$action[1]}($params, ...$args);
-    }
-
-    /**
-     * Execute string action.
-     *
-     * @param  string  $action  String action (invokable class or plain text)
-     * @param  array   $params  Route parameters
-     * @param  array   $args    Additional arguments
-     */
-    private function executeString(string $action, array $params, array $args): void
-    {
-        if (method_exists($action, '__invoke')) {
-            (new $action())($params, ...$args);
-
-            return;
-        }
-
-        echo $action;
     }
 
 }

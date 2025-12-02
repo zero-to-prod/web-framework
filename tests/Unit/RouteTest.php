@@ -1200,6 +1200,51 @@ class RouteTest extends TestCase
 
         $this->assertEquals(['foo', 'bar'], InvokeableControllerWithArgs::$received_args);
     }
+
+    /** @test */
+    public function uri_without_leading_slash_is_normalized(): void
+    {
+        $executed = false;
+
+        $routes = Routes::collect()
+            ->get('about', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch('GET', '/about');
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function uri_without_leading_slash_with_parameters(): void
+    {
+        $received_params = null;
+
+        $routes = Routes::collect()
+            ->get('users/{id}', function (array $params) use (&$received_params) {
+                $received_params = $params;
+            });
+
+        $routes->dispatch('GET', '/users/123');
+
+        $this->assertEquals(['id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function empty_string_uri_is_normalized_to_root(): void
+    {
+        $executed = false;
+
+        $routes = Routes::collect()
+            ->get('', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch('GET', '/');
+
+        $this->assertTrue($executed);
+    }
 }
 
 class TestController
