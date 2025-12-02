@@ -98,16 +98,108 @@ class Route
     }
 
     /**
-     * Add a constraint to this route.
+     * Create a new route with an additional constraint.
      *
-     * @param  string  $param    Parameter name
-     * @param  string  $pattern  Regex pattern constraint
+     * @param  string|array  $param    Parameter name or array of constraints
+     * @param  string|null   $pattern  Regex pattern (if $param is string)
      *
-     * @return void
+     * @return Route  New route instance with updated constraint
      */
-    public function addConstraint(string $param, string $pattern): void
+    public function withConstraint($param, $pattern = null): Route
     {
-        $this->constraints[$param] = $pattern;
+        if (is_array($param)) {
+            return $this->withConstraints($param);
+        }
+
+        $new_constraints = array_merge($this->constraints, [$param => $pattern]);
+
+        return new self(
+            $this->method,
+            $this->pattern,
+            $this->recompileWithConstraints($new_constraints),
+            $this->params,
+            $this->optional_params,
+            $new_constraints,
+            $this->action,
+            $this->name
+        );
+    }
+
+    /**
+     * Create a new route with multiple constraints.
+     *
+     * @param  array  $constraints  Array of param => pattern
+     *
+     * @return Route  New route instance with updated constraints
+     */
+    public function withConstraints(array $constraints): Route
+    {
+        $new_constraints = array_merge($this->constraints, $constraints);
+
+        return new self(
+            $this->method,
+            $this->pattern,
+            $this->recompileWithConstraints($new_constraints),
+            $this->params,
+            $this->optional_params,
+            $new_constraints,
+            $this->action,
+            $this->name
+        );
+    }
+
+    /**
+     * Create a new route with a name.
+     *
+     * @param  string  $name  Route name
+     *
+     * @return Route  New route instance with name
+     */
+    public function withName(string $name): Route
+    {
+        return new self(
+            $this->method,
+            $this->pattern,
+            $this->regex,
+            $this->params,
+            $this->optional_params,
+            $this->constraints,
+            $this->action,
+            $name
+        );
+    }
+
+    /**
+     * Recompile regex with updated constraints.
+     *
+     * @param  array  $constraints  Constraints to apply
+     *
+     * @return string  Compiled regex
+     */
+    private function recompileWithConstraints(array $constraints): string
+    {
+        preg_match_all('/\{([a-zA-Z_]+\w*)(?::(.+?))?(\?)?\}/', $this->pattern, $matches);
+
+        $search = [];
+        $replace = [];
+
+        foreach ($matches[0] as $i => $placeholder) {
+            $name = $matches[1][$i];
+            $inline = !empty($matches[2][$i]) ? $matches[2][$i] : null;
+            $is_optional = !empty($matches[3][$i]);
+
+            $constraint = $constraints[$name] ?? $inline ?? '[^/]+';
+
+            if ($is_optional) {
+                $search[] = '/'.$placeholder;
+                $replace[] = '(?:/('.$constraint.'))?';
+            } else {
+                $search[] = $placeholder;
+                $replace[] = '('.$constraint.')';
+            }
+        }
+
+        return '#^'.str_replace($search, $replace, $this->pattern).'$#';
     }
 
     /**

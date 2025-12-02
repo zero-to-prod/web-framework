@@ -241,15 +241,6 @@ class RouteCollectionTest extends TestCase
     }
 
     /** @test */
-    public function throws_exception_when_where_called_without_route(): void
-    {
-        $this->expectException(\BadMethodCallException::class);
-        $this->expectExceptionMessage('No pending route');
-
-        Routes::collect()->where('id', '\d+');
-    }
-
-    /** @test */
     public function post_route_works(): void
     {
         $received_params = null;
@@ -473,14 +464,6 @@ class RouteCollectionTest extends TestCase
         $route = $routes->matchRoute('GET', '/users/123');
 
         $this->assertEquals('user.show', $route->name);
-    }
-
-    /** @test */
-    public function throws_exception_when_name_called_without_route(): void
-    {
-        $this->expectException(\BadMethodCallException::class);
-
-        Routes::collect()->name('test');
     }
 
     /** @test */

@@ -2,7 +2,6 @@
 
 namespace Zerotoprod\WebFramework;
 
-use BadMethodCallException;
 use Closure;
 use InvalidArgumentException;
 use RuntimeException;
@@ -11,45 +10,33 @@ use RuntimeException;
  * Collection of HTTP routes with fluent registration API.
  *
  * Provides Laravel-style routing with inline constraints, optional parameters,
- * and fluent where() chaining.
+ * and fluent where() chaining via PendingRoute.
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
 class RouteCollection
 {
-    /**
-     * Registered routes organized by type.
-     *
-     * @var array
-     */
-    private $routes = [
-        'static' => [],
-        'patterned' => []
-    ];
+    /** @var array */
+    private $routes = [];
 
-    /**
-     * Pending route for fluent where() calls.
-     *
-     * @var Route|null
-     */
-    private $pending_route;
+    /** @var array|null */
+    private $static_index = null;
 
-    /**
-     * Fallback handler for 404 responses.
-     *
-     * @var callable|null
-     */
+    /** @var array */
+    private $pattern_index = [];
+
+    /** @var callable|null */
     private $not_found_handler = null;
 
     /**
      * Define a GET route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function get(string $uri, $action = null): RouteCollection
+    public function get(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('GET', $uri, $action);
     }
@@ -57,12 +44,12 @@ class RouteCollection
     /**
      * Define a POST route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function post(string $uri, $action = null): RouteCollection
+    public function post(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('POST', $uri, $action);
     }
@@ -70,12 +57,12 @@ class RouteCollection
     /**
      * Define a PUT route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function put(string $uri, $action = null): RouteCollection
+    public function put(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('PUT', $uri, $action);
     }
@@ -83,12 +70,12 @@ class RouteCollection
     /**
      * Define a PATCH route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function patch(string $uri, $action = null): RouteCollection
+    public function patch(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('PATCH', $uri, $action);
     }
@@ -96,12 +83,12 @@ class RouteCollection
     /**
      * Define a DELETE route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function delete(string $uri, $action = null): RouteCollection
+    public function delete(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('DELETE', $uri, $action);
     }
@@ -109,12 +96,12 @@ class RouteCollection
     /**
      * Define an OPTIONS route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function options(string $uri, $action = null): RouteCollection
+    public function options(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('OPTIONS', $uri, $action);
     }
@@ -122,72 +109,20 @@ class RouteCollection
     /**
      * Define a HEAD route.
      *
-     * @param  string  $uri     The URI pattern
-     * @param  mixed   $action  The action to execute
+     * @param  string  $uri     URI pattern
+     * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for fluent chaining
      */
-    public function head(string $uri, $action = null): RouteCollection
+    public function head(string $uri, $action = null): PendingRoute
     {
         return $this->addRoute('HEAD', $uri, $action);
     }
 
     /**
-     * Add regex constraint(s) to the most recent route.
+     * Define fallback handler for 404 responses.
      *
-     * @param  string|array  $param    Parameter name or array of name => pattern
-     * @param  string|null   $pattern  Regex pattern (if $param is string)
-     *
-     * @return RouteCollection  Returns $this for method chaining
-     *
-     * @throws BadMethodCallException  If no pending route
-     * @throws InvalidArgumentException  If constraint pattern is invalid
-     */
-    public function where($param, ?string $pattern = null): RouteCollection
-    {
-        if ($this->pending_route === null) {
-            throw new BadMethodCallException('No pending route for where() constraint. Call an HTTP method first.');
-        }
-
-        if (is_array($param)) {
-            foreach ($param as $key => $value) {
-                $this->validateConstraint($key, $value);
-                $this->pending_route->addConstraint($key, $value);
-            }
-        } else {
-            $this->validateConstraint($param, $pattern);
-            $this->pending_route->addConstraint($param, $pattern);
-        }
-
-        $this->recompileRoute($this->pending_route);
-
-        return $this;
-    }
-
-    /**
-     * Name the most recent route.
-     *
-     * @param  string  $name  Route name
-     *
-     * @return RouteCollection  Returns $this for method chaining
-     *
-     * @throws BadMethodCallException  If no pending route
-     */
-    public function name(string $name): RouteCollection
-    {
-        if ($this->pending_route === null) {
-            throw new BadMethodCallException('No pending route for name(). Call an HTTP method first.');
-        }
-
-        $this->pending_route->name = $name;
-
-        return $this;
-    }
-
-    /**
-     * Define a fallback handler for 404 responses.
-     *
-     * @param  mixed  $action  The action to execute
+     * @param  mixed  $action  Fallback action
      *
      * @return RouteCollection  Returns $this for method chaining
      *
@@ -195,10 +130,8 @@ class RouteCollection
      */
     public function fallback($action): RouteCollection
     {
-        $this->finalizePendingRoute();
-
-        if (!$this->isValidAction($action)) {
-            throw new InvalidArgumentException('Fallback action is invalid');
+        if ($action === null) {
+            throw new InvalidArgumentException('Fallback action cannot be null');
         }
 
         $this->not_found_handler = $action;
@@ -217,26 +150,25 @@ class RouteCollection
      */
     public function dispatch(string $method, string $uri, ...$args): bool
     {
-        $this->finalizePendingRoute();
-
-        $path = strtok($uri, '?');
-        $path = $path !== false ? $path : '';
+        $path = $this->stripQueryString($uri);
+        $this->buildStaticIndex();
 
         $key = $method.':'.$path;
 
-        if (isset($this->routes['static'][$key])) {
-            $this->executeAction($this->routes['static'][$key]->action, [], $args);
+        if (isset($this->static_index[$key])) {
+            $route = $this->static_index[$key];
+            $this->executeAction($route->action, [], $args);
 
             return true;
         }
 
-        foreach ($this->routes['patterned'] as $route) {
+        foreach ($this->routes as $route) {
             if ($route->method !== $method) {
                 continue;
             }
 
-            if (preg_match($route->regex, $path, $matches)) {
-                $params = $this->extractParams($matches, $route->params, $route->optional_params);
+            if ($route->matches($path)) {
+                $params = $route->extractParams($path);
                 $this->executeAction($route->action, $params, $args);
 
                 return true;
@@ -259,19 +191,7 @@ class RouteCollection
      */
     public function getRoutes(): array
     {
-        $this->finalizePendingRoute();
-
-        $all_routes = [];
-
-        foreach ($this->routes['static'] as $route) {
-            $all_routes[] = $route;
-        }
-
-        foreach ($this->routes['patterned'] as $route) {
-            $all_routes[] = $route;
-        }
-
-        return $all_routes;
+        return $this->routes;
     }
 
     /**
@@ -280,22 +200,20 @@ class RouteCollection
      * @param  string  $method  HTTP method
      * @param  string  $uri     Request URI
      *
-     * @return Route|null  Matching route or null
+     * @return Route|null  Matched route or null
      */
     public function matchRoute(string $method, string $uri)
     {
-        $this->finalizePendingRoute();
-
-        $path = strtok($uri, '?');
-        $path = $path !== false ? $path : '';
+        $path = $this->stripQueryString($uri);
+        $this->buildStaticIndex();
 
         $key = $method.':'.$path;
 
-        if (isset($this->routes['static'][$key])) {
-            return $this->routes['static'][$key];
+        if (isset($this->static_index[$key])) {
+            return $this->static_index[$key];
         }
 
-        foreach ($this->routes['patterned'] as $route) {
+        foreach ($this->routes as $route) {
             if ($route->method === $method && $route->matches($path)) {
                 return $route;
             }
@@ -314,15 +232,7 @@ class RouteCollection
      */
     public function hasRoute(string $method, string $pattern): bool
     {
-        $this->finalizePendingRoute();
-
-        foreach ($this->getRoutes() as $route) {
-            if ($route->method === $method && $route->pattern === $pattern) {
-                return true;
-            }
-        }
-
-        return false;
+        return isset($this->pattern_index[$method.':'.$pattern]);
     }
 
     /**
@@ -332,9 +242,7 @@ class RouteCollection
      */
     public function isCacheable(): bool
     {
-        $this->finalizePendingRoute();
-
-        foreach ($this->getRoutes() as $route) {
+        foreach ($this->routes as $route) {
             if (!$route->isCacheable()) {
                 return false;
             }
@@ -361,18 +269,11 @@ class RouteCollection
             );
         }
 
-        $static_routes = array_map(function ($route) {
+        $routes_data = array_map(function ($route) {
             return $route->toArray();
-        }, $this->routes['static']);
+        }, $this->routes);
 
-        $patterned_routes = array_map(function ($route) {
-            return $route->toArray();
-        }, $this->routes['patterned']);
-
-        return serialize([
-            'static' => $static_routes,
-            'patterned' => $patterned_routes
-        ]);
+        return serialize($routes_data);
     }
 
     /**
@@ -384,19 +285,12 @@ class RouteCollection
      */
     public function loadCompiled(string $data): RouteCollection
     {
-        $routes = unserialize($data, ['allowed_classes' => true]);
+        $routes_data = unserialize($data, ['allowed_classes' => true]);
 
-        if (isset($routes['static']) && is_array($routes['static'])) {
-            foreach ($routes['static'] as $routeData) {
+        if (is_array($routes_data)) {
+            foreach ($routes_data as $routeData) {
                 $route = Route::fromArray($routeData);
-                $key = $route->method.':'.$route->pattern;
-                $this->routes['static'][$key] = $route;
-            }
-        }
-
-        if (isset($routes['patterned']) && is_array($routes['patterned'])) {
-            foreach ($routes['patterned'] as $routeData) {
-                $this->routes['patterned'][] = Route::fromArray($routeData);
+                $this->storeRoute($route);
             }
         }
 
@@ -404,82 +298,109 @@ class RouteCollection
     }
 
     /**
-     * Add a route to the collection.
+     * Finalize a route by storing it in the collection.
+     * Called by PendingRoute when route is complete.
+     *
+     * @param  Route  $route  Route to store
+     */
+    public function finalizeRoute(Route $route): void
+    {
+        $this->storeRoute($route);
+    }
+
+    /**
+     * Create and return a pending route.
      *
      * @param  string  $method  HTTP method
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return RouteCollection  Returns $this for method chaining
+     * @return PendingRoute  Pending route for chaining
      *
-     * @throws InvalidArgumentException  If action is null or invalid
+     * @throws InvalidArgumentException  If action is invalid
      */
-    private function addRoute(string $method, string $uri, $action): RouteCollection
+    private function addRoute(string $method, string $uri, $action): PendingRoute
     {
-        $this->finalizePendingRoute();
-
         if ($action === null) {
             throw new InvalidArgumentException("Action cannot be null for route: {$method} {$uri}");
         }
 
-        if (!$this->isValidAction($action)) {
-            throw new InvalidArgumentException("Invalid action type for route: {$method} {$uri}");
-        }
-
-        $parsed = $this->parsePattern($uri);
+        $compiled = $this->parseAndCompile($uri);
 
         $route = new Route(
             $method,
             $uri,
-            '',
-            $parsed['params'],
-            $parsed['optional_params'],
-            $parsed['constraints'],
+            $compiled['regex'],
+            $compiled['params'],
+            $compiled['optional_params'],
+            $compiled['constraints'],
             $action
         );
 
-        $route->regex = $this->compileRoute($route);
-
-        if (empty($parsed['params'])) {
-            $key = $method.':'.$uri;
-            $this->routes['static'][$key] = $route;
-        } else {
-            $this->pending_route = $route;
-        }
-
-        return $this;
+        return new PendingRoute($this, $route);
     }
 
     /**
-     * Finalize pending route by moving it to storage.
+     * Store a route and update indices.
+     *
+     * @param  Route  $route  Route to store
      */
-    private function finalizePendingRoute(): void
+    private function storeRoute(Route $route): void
     {
-        if ($this->pending_route !== null) {
-            $this->routes['patterned'][] = $this->pending_route;
-            $this->pending_route = null;
+        $this->routes[] = $route;
+        $this->pattern_index[$route->method.':'.$route->pattern] = $route;
+        $this->static_index = null;
+    }
+
+    /**
+     * Build static route index for O(1) lookups.
+     */
+    private function buildStaticIndex(): void
+    {
+        if ($this->static_index !== null) {
+            return;
+        }
+
+        $this->static_index = [];
+
+        foreach ($this->routes as $route) {
+            if (empty($route->params)) {
+                $key = $route->method.':'.$route->pattern;
+                $this->static_index[$key] = $route;
+            }
         }
     }
 
     /**
-     * Parse URI pattern for parameters, constraints, and optional markers.
+     * Parse URI pattern and compile to regex in single pass.
      *
-     * @param  string  $pattern  URI pattern
+     * @param  string  $pattern           URI pattern
+     * @param  array   $where_constraints Constraints from where() calls
      *
-     * @return array  Parsed pattern data
+     * @return array  Compiled route data
+     *
+     * @throws InvalidArgumentException  If conflicting constraints
      */
-    private function parsePattern(string $pattern): array
+    private function parseAndCompile(string $pattern, array $where_constraints = []): array
     {
         preg_match_all('/\{([a-zA-Z_]+\w*)(?::(.+?))?(\?)?\}/', $pattern, $matches);
 
         $params = [];
         $optional_params = [];
         $constraints = [];
+        $search = [];
+        $replace = [];
 
         foreach ($matches[0] as $i => $placeholder) {
             $name = $matches[1][$i];
-            $constraint = !empty($matches[2][$i]) ? $matches[2][$i] : null;
+            $inline = !empty($matches[2][$i]) ? $matches[2][$i] : null;
             $is_optional = !empty($matches[3][$i]);
+
+            if ($inline && isset($where_constraints[$name])) {
+                throw new InvalidArgumentException(
+                    "Parameter '{$name}' has both inline constraint (:{$inline}) and where() constraint. Use only one."
+                );
+            }
 
             $params[] = $name;
 
@@ -487,36 +408,11 @@ class RouteCollection
                 $optional_params[] = $name;
             }
 
-            if ($constraint) {
-                $constraints[$name] = $constraint;
+            $constraint = $inline ?? $where_constraints[$name] ?? '[^/]+';
+
+            if ($inline) {
+                $constraints[$name] = $inline;
             }
-        }
-
-        return compact('params', 'optional_params', 'constraints');
-    }
-
-    /**
-     * Compile route pattern to regex.
-     *
-     * @param  Route  $route  The route to compile
-     *
-     * @return string  Compiled regex pattern
-     */
-    private function compileRoute(Route $route): string
-    {
-        $pattern = $route->pattern;
-
-        preg_match_all('/\{([a-zA-Z_]+\w*)(?::(.+?))?(\?)?\}/', $pattern, $matches);
-
-        $search = [];
-        $replace = [];
-
-        foreach ($matches[0] as $i => $placeholder) {
-            $name = $matches[1][$i];
-            $inline_constraint = !empty($matches[2][$i]) ? $matches[2][$i] : null;
-            $is_optional = !empty($matches[3][$i]);
-
-            $constraint = $route->constraints[$name] ?? $inline_constraint ?? '[^/]+';
 
             if ($is_optional) {
                 $search[] = '/'.$placeholder;
@@ -527,45 +423,26 @@ class RouteCollection
             }
         }
 
-        return '#^'.str_replace($search, $replace, $pattern).'$#';
+        return [
+            'params' => $params,
+            'optional_params' => $optional_params,
+            'constraints' => $constraints,
+            'regex' => '#^'.str_replace($search, $replace, $pattern).'$#'
+        ];
     }
 
     /**
-     * Recompile route after adding constraints.
+     * Strip query string from URI.
      *
-     * @param  Route  $route  The route to recompile
+     * @param  string  $uri  Request URI
+     *
+     * @return string  Path without query string
      */
-    private function recompileRoute(Route $route): void
+    private function stripQueryString(string $uri): string
     {
-        $route->regex = $this->compileRoute($route);
-    }
+        $path = strtok($uri, '?');
 
-    /**
-     * Extract parameters from regex matches.
-     *
-     * @param  array  $matches         Regex match results
-     * @param  array  $param_names     Parameter names
-     * @param  array  $optional_params Optional parameter names
-     *
-     * @return array  Extracted parameters
-     */
-    private function extractParams(
-        array $matches,
-        array $param_names,
-        array $optional_params = []
-    ): array {
-        $captured_values = array_slice($matches, 1);
-        $params = [];
-
-        foreach ($param_names as $index => $param_name) {
-            $value = $captured_values[$index] ?? '';
-
-            if ($value !== '' || !in_array($param_name, $optional_params, true)) {
-                $params[$param_name] = $value;
-            }
-        }
-
-        return $params;
+        return $path !== false ? $path : '';
     }
 
     /**
@@ -574,10 +451,16 @@ class RouteCollection
      * @param  mixed  $action  Action to execute
      * @param  array  $params  Route parameters
      * @param  array  $args    Additional arguments
+     *
+     * @throws InvalidArgumentException  If action type is invalid
      */
     private function executeAction($action, array $params, array $args): void
     {
         if (is_array($action)) {
+            if (!isset($action[0], $action[1]) || isset($action[2])) {
+                throw new InvalidArgumentException('Controller array must have exactly 2 elements: [Class, \'method\']');
+            }
+
             (new $action[0]())->{$action[1]}($params, ...$args);
 
             return;
@@ -595,45 +478,10 @@ class RouteCollection
             return;
         }
 
+        if (!is_callable($action)) {
+            throw new InvalidArgumentException('Action must be callable, controller array, or string');
+        }
+
         $action($params, ...$args);
-    }
-
-    /**
-     * Validate that action is acceptable.
-     *
-     * @param  mixed  $action  Action to validate
-     *
-     * @return bool  True if valid
-     */
-    private function isValidAction($action): bool
-    {
-        if (is_array($action) && isset($action[0], $action[1]) && !isset($action[2])) {
-            return true;
-        }
-
-        if (is_string($action)) {
-            return true;
-        }
-
-        if (is_callable($action)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Validate regex constraint pattern.
-     *
-     * @param  string  $param    Parameter name
-     * @param  string  $pattern  Regex pattern
-     *
-     * @throws InvalidArgumentException  If pattern is invalid
-     */
-    private function validateConstraint(string $param, string $pattern): void
-    {
-        if (@preg_match('#^'.$pattern.'$#', '') === false) {
-            throw new InvalidArgumentException("Invalid regex pattern for constraint '{$param}': {$pattern}");
-        }
     }
 }

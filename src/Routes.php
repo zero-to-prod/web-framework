@@ -27,17 +27,21 @@ class Routes
     /**
      * Dispatch a request against a route collection.
      *
-     * @param  RouteCollection  $routes  The route collection
-     * @param  string           $method  HTTP method (GET, POST, etc.)
-     * @param  string           $uri     Request URI
-     * @param  mixed            ...$args Additional arguments to pass to action
+     * @param  RouteCollection|PendingRoute  $routes  The route collection or pending route
+     * @param  string                        $method  HTTP method (GET, POST, etc.)
+     * @param  string                        $uri     Request URI
+     * @param  mixed                         ...$args Additional arguments to pass to action
      *
      * @return bool  True if route was matched and executed
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public static function dispatch(RouteCollection $routes, string $method, string $uri, ...$args): bool
+    public static function dispatch($routes, string $method, string $uri, ...$args): bool
     {
+        if ($routes instanceof PendingRoute) {
+            return $routes->dispatch($method, $uri, ...$args);
+        }
+
         return $routes->dispatch($method, $uri, ...$args);
     }
 }
