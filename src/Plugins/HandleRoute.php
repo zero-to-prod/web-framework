@@ -2,6 +2,7 @@
 
 namespace Zerotoprod\WebFramework\Plugins;
 
+use Closure;
 use RuntimeException;
 
 /**
@@ -17,12 +18,14 @@ class HandleRoute
      * Structure:
      * - 'static': Hash map for O(1) lookups: "METHOD:PATH" => callable
      * - 'dynamic': Array of dynamic route configs: [['method' => 'GET', 'pattern' => '/users/{id}', 'regex' => '...', 'params' => [...], 'action' => callable], ...]
+     * - 'regex': Array of user-provided regex route configs: [['method' => 'GET', 'pattern' => '/users/(\d+)/', 'regex' => '...', 'params' => [...], 'action' => callable], ...]
      *
      * @var array
      */
     private $routes = [
         'static' => [],
-        'dynamic' => []
+        'dynamic' => [],
+        'regex' => []
     ];
 
     /**
@@ -74,19 +77,20 @@ class HandleRoute
     /**
      * Add a route to the route map.
      *
-     * Automatically detects static vs dynamic routes:
+     * Automatically detects static vs dynamic vs regex routes:
      * - Static routes (no {params}): Stored in hash map for O(1) lookups
      * - Dynamic routes (with {params}): Compiled to regex and stored separately
+     * - Regex routes (array format): User-provided regex patterns with explicit params
      *
      * @param  string                      $method  HTTP method (GET, POST, etc.)
-     * @param  string                      $uri     URI pattern to match (e.g., "/users/{id}")
+     * @param  string|array                $uri     URI pattern to match (e.g., "/users/{id}" or ['/pattern/', ['params']])
      * @param  callable|array|string|null  $action  Action to execute
      *
      * @return HandleRoute  Returns $this for method chaining during definition
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function add(string $method, string $uri, $action = null): HandleRoute
+    public function add(string $method, $uri, $action = null): HandleRoute
     {
         $normalized = $this->normalizeAction($action);
 
@@ -94,13 +98,33 @@ class HandleRoute
             return $this;
         }
 
-        if (strpos($uri, '{') !== false) {
+        if ($this->isRegexRouteArray($uri)) {
+            $pattern = $uri[0];
+            $params = $uri[1] ?? [];
+
+            $compiled = $this->compileRegexRoute($pattern, $params);
+
+            if ($compiled !== null) {
+                $this->routes['regex'][] = [
+                    'method' => $method,
+                    'pattern' => $compiled['pattern'],
+                    'regex' => $compiled['regex'],
+                    'params' => $compiled['params'],
+                    'action' => $normalized
+                ];
+            }
+
+            return $this;
+        }
+
+        if (is_string($uri) && strpos($uri, '{') !== false) {
             $compiled = $this->compilePattern($uri);
             $this->routes['dynamic'][] = [
                 'method' => $method,
                 'pattern' => $uri,
                 'regex' => $compiled['regex'],
                 'params' => $compiled['params'],
+                'optional_params' => $compiled['optional_params'],
                 'action' => $normalized
             ];
         } else {
@@ -113,14 +137,14 @@ class HandleRoute
     /**
      * Define a GET route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function get(string $uri, $action = null): HandleRoute
+    public function get($uri, $action = null): HandleRoute
     {
         return $this->add('GET', $uri, $action);
     }
@@ -128,14 +152,14 @@ class HandleRoute
     /**
      * Define a POST route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function post(string $uri, $action = null): HandleRoute
+    public function post($uri, $action = null): HandleRoute
     {
         return $this->add('POST', $uri, $action);
     }
@@ -143,14 +167,14 @@ class HandleRoute
     /**
      * Define a PUT route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function put(string $uri, $action = null): HandleRoute
+    public function put($uri, $action = null): HandleRoute
     {
         return $this->add('PUT', $uri, $action);
     }
@@ -158,14 +182,14 @@ class HandleRoute
     /**
      * Define a PATCH route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function patch(string $uri, $action = null): HandleRoute
+    public function patch($uri, $action = null): HandleRoute
     {
         return $this->add('PATCH', $uri, $action);
     }
@@ -173,14 +197,14 @@ class HandleRoute
     /**
      * Define a DELETE route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function delete(string $uri, $action = null): HandleRoute
+    public function delete($uri, $action = null): HandleRoute
     {
         return $this->add('DELETE', $uri, $action);
     }
@@ -188,14 +212,14 @@ class HandleRoute
     /**
      * Define an OPTIONS route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function options(string $uri, $action = null): HandleRoute
+    public function options($uri, $action = null): HandleRoute
     {
         return $this->add('OPTIONS', $uri, $action);
     }
@@ -203,14 +227,14 @@ class HandleRoute
     /**
      * Define a HEAD route.
      *
-     * @param  string                      $uri     The URI pattern to match
+     * @param  string|array                $uri     The URI pattern to match (string or regex array)
      * @param  callable|array|string|null  $action  The action to execute
      *
      * @return HandleRoute  Returns $this for method chaining
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function head(string $uri, $action = null): HandleRoute
+    public function head($uri, $action = null): HandleRoute
     {
         return $this->add('HEAD', $uri, $action);
     }
@@ -239,18 +263,112 @@ class HandleRoute
      *
      * Converts patterns like "/users/{id}/posts/{slug}" to regex
      * and extracts parameter names ['id', 'slug'].
+     * Supports optional parameters with {param?} syntax.
      *
-     * @param  string  $pattern  Route pattern with {param} placeholders
+     * @param  string  $pattern  Route pattern with {param} or {param?} placeholders
      *
-     * @return array  ['regex' => compiled regex, 'params' => parameter names]
+     * @return array  ['regex' => compiled regex, 'params' => parameter names, 'optional_params' => optional parameter names]
      */
     private function compilePattern(string $pattern): array
     {
-        preg_match_all('/\{([a-zA-Z_]+w*)}/', $pattern, $matches);
+        preg_match_all('/\{([a-zA-Z_]+\w*)\??}/', $pattern, $matches);
+
+        $params = [];
+        $optional_params = [];
+        $search = [];
+        $replace = [];
+
+        foreach ($matches[0] as $index => $placeholder) {
+            $param_name = $matches[1][$index];
+            $params[] = $param_name;
+
+            if (substr($placeholder, -2, 1) === '?') {
+                $optional_params[] = $param_name;
+                $search[] = '/'.$placeholder;
+                $replace[] = '(?:/([^/]+))?';
+            } else {
+                $search[] = $placeholder;
+                $replace[] = '([^/]+)';
+            }
+        }
 
         return [
-            'regex' => '#^'.str_replace($matches[0], array_fill(0, count($matches[0]), '([^/]+)'), $pattern).'$#',
-            'params' => $matches[1]
+            'regex' => '#^'.str_replace($search, $replace, $pattern).'$#',
+            'params' => $params,
+            'optional_params' => $optional_params
+        ];
+    }
+
+    /**
+     * Check if the URI is a valid regex route array format.
+     *
+     * Valid formats:
+     * - Single element: ['/pattern/']
+     * - Two elements: ['/pattern/', ['param1', 'param2']]
+     *
+     * @param  mixed  $uri  The URI to check
+     *
+     * @return bool  True if valid regex route array format
+     */
+    private function isRegexRouteArray($uri): bool
+    {
+        if (!is_array($uri)) {
+            return false;
+        }
+
+        $count = count($uri);
+
+        if ($count === 1) {
+            return isset($uri[0]) && is_string($uri[0]);
+        }
+
+        if ($count === 2) {
+            return isset($uri[0], $uri[1]) && is_string($uri[0]) && is_array($uri[1]);
+        }
+
+        return false;
+    }
+
+    /**
+     * Compile a regex route pattern and validate it.
+     *
+     * Validates the regex pattern and optionally checks that the number of
+     * capture groups matches the number of parameter names provided.
+     *
+     * @param  string  $pattern  The regex pattern
+     * @param  array   $params   Parameter names to map to capture groups
+     *
+     * @return array|null  ['pattern' => original, 'regex' => compiled, 'params' => params] or null if invalid
+     */
+    private function compileRegexRoute(string $pattern, array $params = []): ?array
+    {
+        if (empty($pattern)) {
+            return null;
+        }
+
+        $compiled = $pattern;
+
+        if ($pattern[0] === '/' && substr($pattern, -1) === '/') {
+            $compiled = '#^'.substr($pattern, 0, -1).'$#';
+        }
+
+        if (@preg_match($compiled, '') === false) {
+            return null;
+        }
+
+        if (!empty($params)) {
+            preg_match_all('/(?<!\\\)\((?!\?)/', $pattern, $matches);
+            $capture_count = count($matches[0]);
+
+            if ($capture_count !== count($params)) {
+                return null;
+            }
+        }
+
+        return [
+            'pattern' => $pattern,
+            'regex' => $compiled,
+            'params' => $params
         ];
     }
 
@@ -350,7 +468,37 @@ class HandleRoute
             }
 
             if (preg_match($route['regex'], $this->request_path, $matches)) {
-                $this->executeAction($route['action'], array_merge([array_combine($route['params'], array_slice($matches, 1))], $this->args));
+                $captured_values = array_slice($matches, 1);
+                $optional_params = $route['optional_params'] ?? [];
+                $params = [];
+
+                foreach ($route['params'] as $index => $param_name) {
+                    $value = $captured_values[$index] ?? '';
+
+                    if ($value !== '' || !in_array($param_name, $optional_params)) {
+                        $params[$param_name] = $value;
+                    }
+                }
+
+                $this->executeAction($route['action'], array_merge([$params], $this->args));
+
+                return true;
+            }
+        }
+
+        // Check regex routes (O(n))
+        foreach ($this->routes['regex'] as $route) {
+            if ($route['method'] !== $this->request_method) {
+                continue;
+            }
+
+            if (preg_match($route['regex'], $this->request_path, $matches)) {
+                if (!empty($route['params'])) {
+                    $params = array_combine($route['params'], array_slice($matches, 1));
+                    $this->executeAction($route['action'], array_merge([$params], $this->args));
+                } else {
+                    $this->executeAction($route['action'], $this->args);
+                }
 
                 return true;
             }
@@ -390,13 +538,19 @@ class HandleRoute
     public function isCacheable(): bool
     {
         foreach ($this->routes['static'] as $action) {
-            if ($action instanceof \Closure) {
+            if ($action instanceof Closure) {
                 return false;
             }
         }
 
         foreach ($this->routes['dynamic'] as $route) {
-            if ($route['action'] instanceof \Closure) {
+            if ($route['action'] instanceof Closure) {
+                return false;
+            }
+        }
+
+        foreach ($this->routes['regex'] as $route) {
+            if ($route['action'] instanceof Closure) {
                 return false;
             }
         }
@@ -482,6 +636,10 @@ class HandleRoute
 
         if (isset($routes['dynamic']) && is_array($routes['dynamic'])) {
             $this->routes['dynamic'] = $routes['dynamic'];
+        }
+
+        if (isset($routes['regex']) && is_array($routes['regex'])) {
+            $this->routes['regex'] = $routes['regex'];
         }
 
         return $this;

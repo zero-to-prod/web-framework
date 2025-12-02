@@ -102,6 +102,8 @@ class HandleRouteTest extends TestCase
         InvokeableDynamicController::$received_params = null;
         CacheTestController::$executed = false;
         DynamicControllerMultiParams::$received_params = null;
+        RegexController::$received_params = null;
+        InvokeableRegexController::$received_params = null;
     }
     /** @test */
     public function can_instantiate_with_method_and_uri(): void
@@ -1717,7 +1719,7 @@ class HandleRouteTest extends TestCase
 
         $compiled = $router->compileRoutes();
 
-        $this->assertEquals(['static' => [], 'dynamic' => []], $compiled);
+        $this->assertEquals(['static' => [], 'dynamic' => [], 'regex' => []], $compiled);
     }
 
     /** @test */
@@ -1920,6 +1922,963 @@ class HandleRouteTest extends TestCase
         $this->assertEquals('GET', $compiled['dynamic'][0]['method']);
         $this->assertEquals('/users/{id}', $compiled['dynamic'][0]['pattern']);
     }
+
+    /** @test */
+    public function regex_route_single_element_array_matches_and_executes(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('GET', '/about/page');
+        $router->get(['#^/about/([^/]+)$#'], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function regex_route_single_element_array_does_not_pass_params(): void
+    {
+        $received_arg_count = null;
+
+        $router = new HandleRoute('GET', '/about/page');
+        $router->get(['#^/about/([^/]+)$#'], function (...$args) use (&$received_arg_count) {
+            $received_arg_count = count($args);
+        })->dispatch();
+
+        $this->assertEquals(0, $received_arg_count);
+    }
+
+    /** @test */
+    public function regex_route_with_single_parameter(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/123');
+        $router->get(['/users/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_with_multiple_parameters(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/42/posts/99');
+        $router->get(['/users/(\d+)/posts/(\d+)/', ['userId', 'postId']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['userId' => '42', 'postId' => '99'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_with_alphanumeric_slug_pattern(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/articles/my-article-123');
+        $router->get(['/articles/([\w-]+)/', ['slug']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['slug' => 'my-article-123'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_with_controller_array(): void
+    {
+        $router = new HandleRoute('GET', '/items/999');
+        $router->get(['/items/(\d+)/', ['id']], [RegexController::class, 'handle'])->dispatch();
+
+        $this->assertEquals(['id' => '999'], RegexController::$received_params);
+    }
+
+    /** @test */
+    public function regex_route_with_invokeable_controller(): void
+    {
+        $router = new HandleRoute('GET', '/products/abc123');
+        $router->get(['/products/([\w]+)/', ['sku']], InvokeableRegexController::class)->dispatch();
+
+        $this->assertEquals(['sku' => 'abc123'], InvokeableRegexController::$received_params);
+    }
+
+    /** @test */
+    public function regex_route_with_additional_arguments(): void
+    {
+        $logger = 'test_logger';
+        $received_params = null;
+        $received_logger = null;
+
+        $router = new HandleRoute('GET', '/api/456', $logger);
+        $router->get(['/api/(\d+)/', ['id']], function ($params, $log) use (&$received_params, &$received_logger) {
+            $received_params = $params;
+            $received_logger = $log;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '456'], $received_params);
+        $this->assertEquals('test_logger', $received_logger);
+    }
+
+    /** @test */
+    public function regex_route_with_pre_compiled_delimiters(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/789');
+        $router->get(['#^/users/(\d+)$#', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '789'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_does_not_match_wrong_pattern(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('GET', '/users/abc');
+        $router->get(['/users/(\d+)/', ['id']], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function regex_route_does_not_match_wrong_method(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('POST', '/users/123');
+        $router->get(['/users/(\d+)/', ['id']], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function regex_route_works_with_post_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('POST', '/api/create/456');
+        $router->post(['/api/create/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '456'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_works_with_put_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('PUT', '/api/update/789');
+        $router->put(['/api/update/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '789'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_works_with_delete_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('DELETE', '/api/delete/111');
+        $router->delete(['/api/delete/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '111'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_works_with_patch_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('PATCH', '/api/patch/222');
+        $router->patch(['/api/patch/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '222'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_works_with_options_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('OPTIONS', '/api/options/333');
+        $router->options(['/api/options/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '333'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_works_with_head_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('HEAD', '/api/head/444');
+        $router->head(['/api/head/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '444'], $received_params);
+    }
+
+    /** @test */
+    public function static_route_takes_priority_over_regex_route(): void
+    {
+        $static_executed = false;
+        $regex_executed = false;
+
+        $router = new HandleRoute('GET', '/users/create');
+        $router->get('/users/create', function () use (&$static_executed) {
+            $static_executed = true;
+        });
+        $router->get(['/users/(\w+)/', ['action']], function () use (&$regex_executed) {
+            $regex_executed = true;
+        })->dispatch();
+
+        $this->assertTrue($static_executed);
+        $this->assertFalse($regex_executed);
+    }
+
+    /** @test */
+    public function dynamic_route_takes_priority_over_regex_route(): void
+    {
+        $dynamic_executed = false;
+        $regex_executed = false;
+
+        $router = new HandleRoute('GET', '/products/123');
+        $router->get('/products/{id}', function () use (&$dynamic_executed) {
+            $dynamic_executed = true;
+        });
+        $router->get(['/products/(\d+)/', ['id']], function () use (&$regex_executed) {
+            $regex_executed = true;
+        })->dispatch();
+
+        $this->assertTrue($dynamic_executed);
+        $this->assertFalse($regex_executed);
+    }
+
+    /** @test */
+    public function regex_route_executes_when_static_and_dynamic_do_not_match(): void
+    {
+        $regex_executed = false;
+
+        $router = new HandleRoute('GET', '/api/v2/123');
+        $router->get('/api/v1', function () {
+        });
+        $router->get('/api/v1/{id}', function () {
+        });
+        $router->get(['/api/v2/(\d+)/', ['id']], function () use (&$regex_executed) {
+            $regex_executed = true;
+        })->dispatch();
+
+        $this->assertTrue($regex_executed);
+    }
+
+    /** @test */
+    public function regex_route_handles_query_strings(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/items/555?sort=asc&page=2');
+        $router->get(['/items/(\d+)/', ['id']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '555'], $received_params);
+    }
+
+    /** @test */
+    public function regex_route_returns_instance_for_chaining(): void
+    {
+        $router = new HandleRoute('GET', '/test');
+
+        $result = $router->get(['/test/', []]);
+
+        $this->assertSame($router, $result);
+    }
+
+    /** @test */
+    public function regex_route_invalid_pattern_skips_silently(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('GET', '/test');
+        $router->get(['(?P<invalid>', ['id']], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function regex_route_param_count_mismatch_skips_silently(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('GET', '/users/123/posts/456');
+        $router->get(['/users/(\d+)/posts/(\d+)/', ['id']], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function regex_route_empty_pattern_skips_silently(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('GET', '/test');
+        $router->get(['', ['id']], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function regex_route_invalid_array_format_three_elements_skips(): void
+    {
+        $executed = false;
+
+        $router = new HandleRoute('GET', '/test');
+        $router->get(['/pattern/', ['id'], 'extra'], function () use (&$executed) {
+            $executed = true;
+        })->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function regex_route_with_null_action_does_not_execute(): void
+    {
+        $router = new HandleRoute('GET', '/test/123');
+
+        ob_start();
+        $router->get(['/test/(\d+)/', ['id']], null)->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('', $output);
+    }
+
+    /** @test */
+    public function compile_routes_includes_regex_routes_in_correct_format(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get(['/users/(\d+)/', ['id']], [RegexController::class, 'handle']);
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertCount(1, $compiled['regex']);
+        $this->assertArrayHasKey('method', $compiled['regex'][0]);
+        $this->assertArrayHasKey('pattern', $compiled['regex'][0]);
+        $this->assertArrayHasKey('regex', $compiled['regex'][0]);
+        $this->assertArrayHasKey('params', $compiled['regex'][0]);
+        $this->assertArrayHasKey('action', $compiled['regex'][0]);
+        $this->assertEquals('GET', $compiled['regex'][0]['method']);
+        $this->assertEquals('/users/(\d+)/', $compiled['regex'][0]['pattern']);
+        $this->assertEquals(['id'], $compiled['regex'][0]['params']);
+    }
+
+    /** @test */
+    public function is_cacheable_returns_true_for_regex_routes_with_controllers(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get(['/users/(\d+)/', ['id']], [RegexController::class, 'handle']);
+        $router->get(['/posts/(\d+)/', ['id']], InvokeableRegexController::class);
+
+        $this->assertTrue($router->isCacheable());
+    }
+
+    /** @test */
+    public function is_cacheable_returns_false_for_regex_route_with_closure(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get(['/users/(\d+)/', ['id']], function ($params) {
+            echo $params['id'];
+        });
+
+        $this->assertFalse($router->isCacheable());
+    }
+
+    /** @test */
+    public function compile_and_set_cached_regex_routes_round_trip(): void
+    {
+        $router1 = new HandleRoute('GET', '/');
+        $router1->get(['/users/(\d+)/posts/(\d+)/', ['userId', 'postId']], [DynamicControllerMultiParams::class, 'handle']);
+        $compiled = $router1->compileRoutes();
+
+        $router2 = new HandleRoute('GET', '/users/42/posts/99');
+        $router2->setCachedRoutes($compiled);
+        $router2->dispatch();
+
+        $this->assertEquals(['userId' => '42', 'postId' => '99'], DynamicControllerMultiParams::$received_params);
+    }
+
+    /** @test */
+    public function set_cached_routes_loads_regex_routes(): void
+    {
+        $received_params = null;
+        $action = function ($params) use (&$received_params) {
+            $received_params = $params;
+        };
+
+        $cached = [
+            'static' => [],
+            'dynamic' => [],
+            'regex' => [
+                [
+                    'method' => 'GET',
+                    'pattern' => '/api/(\d+)/',
+                    'regex' => '#^/api/(\d+)/$#',
+                    'params' => ['id'],
+                    'action' => $action
+                ]
+            ]
+        ];
+
+        $router = new HandleRoute('GET', '/api/789/');
+        $router->setCachedRoutes($cached);
+        $router->dispatch();
+
+        $this->assertEquals(['id' => '789'], $received_params);
+    }
+
+    /** @test */
+    public function set_cached_routes_handles_missing_regex_key(): void
+    {
+        $action = function () {
+            echo 'Test';
+        };
+
+        $router = new HandleRoute('GET', '/test');
+        $cached = ['static' => ['GET:/test' => $action], 'dynamic' => []];
+
+        $router->setCachedRoutes($cached);
+
+        ob_start();
+        $router->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('Test', $output);
+    }
+
+    /** @test */
+    public function set_cached_routes_handles_non_array_regex_value(): void
+    {
+        $action = function () {
+            echo 'Test';
+        };
+
+        $router = new HandleRoute('GET', '/test');
+        $cached = ['static' => ['GET:/test' => $action], 'dynamic' => [], 'regex' => 'invalid'];
+
+        $router->setCachedRoutes($cached);
+
+        ob_start();
+        $router->dispatch();
+        $output = ob_get_clean();
+
+        $this->assertEquals('Test', $output);
+    }
+
+    /** @test */
+    public function compile_routes_with_all_three_route_types(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/static', 'Static');
+        $router->get('/dynamic/{id}', [DynamicController::class, 'show']);
+        $router->get(['/regex/(\d+)/', ['id']], [RegexController::class, 'handle']);
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertCount(1, $compiled['static']);
+        $this->assertCount(1, $compiled['dynamic']);
+        $this->assertCount(1, $compiled['regex']);
+    }
+
+    /** @test */
+    public function regex_route_fallback_executes_when_pattern_does_not_match(): void
+    {
+        $fallback_executed = false;
+
+        $router = new HandleRoute('GET', '/nomatch');
+        $router->get(['/users/(\d+)/', ['id']], function () {
+        });
+        $router->fallback(function () use (&$fallback_executed) {
+            $fallback_executed = true;
+        })->dispatch();
+
+        $this->assertTrue($fallback_executed);
+    }
+
+    /** @test */
+    public function regex_route_single_element_with_controller_array(): void
+    {
+        $router = new HandleRoute('GET', '/about/section');
+        $router->get(['#^/about/(\w+)$#'], [RegexController::class, 'handle'])->dispatch();
+
+        $this->assertNull(RegexController::$received_params);
+    }
+
+    /** @test */
+    public function mixed_static_dynamic_and_regex_routes_dispatch_correctly(): void
+    {
+        $static_executed = false;
+        $dynamic_params = null;
+        $regex_params = null;
+
+        $router = new HandleRoute('GET', '/regex/999');
+        $router->get('/static', function () use (&$static_executed) {
+            $static_executed = true;
+        });
+        $router->get('/dynamic/{id}', function ($params) use (&$dynamic_params) {
+            $dynamic_params = $params;
+        });
+        $router->get(['/regex/(\d+)/', ['id']], function ($params) use (&$regex_params) {
+            $regex_params = $params;
+        })->dispatch();
+
+        $this->assertFalse($static_executed);
+        $this->assertNull($dynamic_params);
+        $this->assertEquals(['id' => '999'], $regex_params);
+    }
+
+    /** @test */
+    public function regex_route_with_multiple_routes_only_first_match_executes(): void
+    {
+        $first_executed = false;
+        $second_executed = false;
+
+        $router = new HandleRoute('GET', '/items/123');
+        $router->get(['/items/(\d+)/', ['id']], function () use (&$first_executed) {
+            $first_executed = true;
+        });
+        $router->get(['/items/(\w+)/', ['slug']], function () use (&$second_executed) {
+            $second_executed = true;
+        })->dispatch();
+
+        $this->assertTrue($first_executed);
+        $this->assertFalse($second_executed);
+    }
+
+    /** @test */
+    public function regex_route_single_element_with_additional_args(): void
+    {
+        $received_arg = null;
+
+        $router = new HandleRoute('GET', '/test/page', 'logger');
+        $router->get(['#^/test/(\w+)$#'], function ($arg) use (&$received_arg) {
+            $received_arg = $arg;
+        })->dispatch();
+
+        $this->assertEquals('logger', $received_arg);
+    }
+
+    /** @test */
+    public function compile_routes_throws_exception_with_regex_closure(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot compile routes with closures for caching');
+
+        $router = new HandleRoute('GET', '/');
+        $router->get(['/users/(\d+)/', ['id']], function ($params) {
+            echo $params['id'];
+        });
+
+        $router->compileRoutes();
+    }
+
+    /** @test */
+    public function regex_route_chains_with_other_route_types(): void
+    {
+        $regex_params = null;
+
+        $router = new HandleRoute('GET', '/api/777');
+        $router->get('/static', 'Static');
+        $router->get('/dynamic/{id}', function () {
+        });
+        $router->get(['/api/(\d+)/', ['id']], function ($params) use (&$regex_params) {
+            $regex_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '777'], $regex_params);
+    }
+
+    /** @test */
+    public function regex_route_with_complex_multi_segment_pattern(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/v1/users/42/posts/99/comments/7');
+        $router->get(['/v1/users/(\d+)/posts/(\d+)/comments/(\d+)/', ['userId', 'postId', 'commentId']], function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['userId' => '42', 'postId' => '99', 'commentId' => '7'], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_at_end_matches_without_param(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users');
+        $router->get('/users/{id?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_at_end_matches_with_param(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/123');
+        $router->get('/users/{id?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_at_start_matches_without_param(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/posts');
+        $router->get('/{id?}/posts', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_at_start_matches_with_param(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/123/posts');
+        $router->get('/{id?}/posts', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_in_middle_matches_without_param(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/api/users/posts');
+        $router->get('/api/{version?}/users/posts', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_in_middle_matches_with_param(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/api/v1/users/posts');
+        $router->get('/api/{version?}/users/posts', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['version' => 'v1'], $received_params);
+    }
+
+    /** @test */
+    public function multiple_optional_parameters_matches_without_any(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users');
+        $router->get('/users/{id?}/{name?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function multiple_optional_parameters_matches_with_first_only(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/123');
+        $router->get('/users/{id?}/{name?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function multiple_optional_parameters_matches_with_both(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/123/john');
+        $router->get('/users/{id?}/{name?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123', 'name' => 'john'], $received_params);
+    }
+
+    /** @test */
+    public function mixed_required_and_optional_parameters(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/123/posts');
+        $router->get('/users/{id}/posts/{slug?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function mixed_required_and_optional_parameters_with_optional_present(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/123/posts/my-post');
+        $router->get('/users/{id}/posts/{slug?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '123', 'slug' => 'my-post'], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_with_controller_array(): void
+    {
+        $router = new HandleRoute('GET', '/items');
+        $router->get('/items/{id?}', [DynamicController::class, 'show'])->dispatch();
+
+        $this->assertEquals([], DynamicController::$received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_with_controller_array_param_present(): void
+    {
+        $router = new HandleRoute('GET', '/items/999');
+        $router->get('/items/{id?}', [DynamicController::class, 'show'])->dispatch();
+
+        $this->assertEquals(['id' => '999'], DynamicController::$received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_with_invokeable_controller(): void
+    {
+        $router = new HandleRoute('GET', '/products/abc');
+        $router->get('/products/{sku?}', InvokeableDynamicController::class)->dispatch();
+
+        $this->assertEquals(['sku' => 'abc'], InvokeableDynamicController::$received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_works_with_post_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('POST', '/api/create');
+        $router->post('/api/create/{id?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_works_with_put_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('PUT', '/api/update/789');
+        $router->put('/api/update/{id?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['id' => '789'], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_works_with_delete_method(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('DELETE', '/api/delete');
+        $router->delete('/api/delete/{id?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_with_additional_arguments(): void
+    {
+        $logger = 'test_logger';
+        $received_params = null;
+        $received_logger = null;
+
+        $router = new HandleRoute('GET', '/items', $logger);
+        $router->get('/items/{id?}', function ($params, $log) use (&$received_params, &$received_logger) {
+            $received_params = $params;
+            $received_logger = $log;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+        $this->assertEquals('test_logger', $received_logger);
+    }
+
+    /** @test */
+    public function optional_parameter_handles_query_strings(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/search/query?page=1');
+        $router->get('/search/{term?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['term' => 'query'], $received_params);
+    }
+
+    /** @test */
+    public function compile_routes_includes_optional_params(): void
+    {
+        $router = new HandleRoute('GET', '/');
+        $router->get('/users/{id}/posts/{slug?}', [DynamicController::class, 'show']);
+
+        $compiled = $router->compileRoutes();
+
+        $this->assertCount(1, $compiled['dynamic']);
+        $this->assertArrayHasKey('optional_params', $compiled['dynamic'][0]);
+        $this->assertEquals(['slug'], $compiled['dynamic'][0]['optional_params']);
+        $this->assertEquals(['id', 'slug'], $compiled['dynamic'][0]['params']);
+    }
+
+    /** @test */
+    public function compile_and_set_cached_optional_params_round_trip(): void
+    {
+        $router1 = new HandleRoute('GET', '/');
+        $router1->get('/users/{userId}/posts/{postId?}', [DynamicControllerMultiParams::class, 'handle']);
+        $compiled = $router1->compileRoutes();
+
+        $router2 = new HandleRoute('GET', '/users/42/posts');
+        $router2->setCachedRoutes($compiled);
+        $router2->dispatch();
+
+        $this->assertEquals(['userId' => '42'], DynamicControllerMultiParams::$received_params);
+    }
+
+    /** @test */
+    public function compile_and_set_cached_optional_params_with_value_round_trip(): void
+    {
+        $router1 = new HandleRoute('GET', '/');
+        $router1->get('/users/{userId}/posts/{postId?}', [DynamicControllerMultiParams::class, 'handle']);
+        $compiled = $router1->compileRoutes();
+
+        $router2 = new HandleRoute('GET', '/users/42/posts/99');
+        $router2->setCachedRoutes($compiled);
+        $router2->dispatch();
+
+        $this->assertEquals(['userId' => '42', 'postId' => '99'], DynamicControllerMultiParams::$received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_returns_instance_for_chaining(): void
+    {
+        $router = new HandleRoute('GET', '/test');
+
+        $result = $router->get('/test/{id?}');
+
+        $this->assertSame($router, $result);
+    }
+
+    /** @test */
+    public function backward_compatibility_required_params_still_work(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/users/456/posts/789');
+        $router->get('/users/{userId}/posts/{postId}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['userId' => '456', 'postId' => '789'], $received_params);
+    }
+
+    /** @test */
+    public function optional_and_required_params_complex_pattern(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/api/v1/users/123/posts');
+        $router->get('/api/{version?}/users/{id}/posts/{slug?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['version' => 'v1', 'id' => '123'], $received_params);
+    }
+
+    /** @test */
+    public function all_optional_parameters_none_provided(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/search');
+        $router->get('/search/{query?}/{category?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function optional_parameter_with_hyphenated_value(): void
+    {
+        $received_params = null;
+
+        $router = new HandleRoute('GET', '/articles/my-article-slug');
+        $router->get('/articles/{slug?}', function ($params) use (&$received_params) {
+            $received_params = $params;
+        })->dispatch();
+
+        $this->assertEquals(['slug' => 'my-article-slug'], $received_params);
+    }
 }
 
 class TestControllerWithArgs
@@ -1970,5 +2929,25 @@ class CacheTestController
     {
         self::$executed = true;
         echo 'Cached controller executed';
+    }
+}
+
+class RegexController
+{
+    public static $received_params = null;
+
+    public function handle($params = null): void
+    {
+        self::$received_params = $params;
+    }
+}
+
+class InvokeableRegexController
+{
+    public static $received_params = null;
+
+    public function __invoke($params = null): void
+    {
+        self::$received_params = $params;
     }
 }
