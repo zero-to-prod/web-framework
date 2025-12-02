@@ -29,6 +29,7 @@ class PendingRoute
      *
      * @param  RouteCollection  $collection  The parent collection
      * @param  Route            $route       The route being configured
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function __construct(RouteCollection $collection, Route $route)
     {
@@ -45,6 +46,7 @@ class PendingRoute
      * @return PendingRoute  Returns $this for method chaining
      *
      * @throws InvalidArgumentException  If constraint is invalid
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function where($param, $pattern = null): PendingRoute
     {
@@ -67,6 +69,7 @@ class PendingRoute
      * @param  string  $name  Route name
      *
      * @return PendingRoute  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function name(string $name): PendingRoute
     {
@@ -86,6 +89,7 @@ class PendingRoute
      * - The PendingRoute object is destroyed (via __destruct)
      *
      * @return RouteCollection  The parent collection for further chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function register(): RouteCollection
     {
@@ -101,6 +105,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function get(string $uri, $action = null): PendingRoute
     {
@@ -116,6 +121,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function post(string $uri, $action = null): PendingRoute
     {
@@ -131,6 +137,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function put(string $uri, $action = null): PendingRoute
     {
@@ -146,6 +153,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function patch(string $uri, $action = null): PendingRoute
     {
@@ -161,6 +169,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function delete(string $uri, $action = null): PendingRoute
     {
@@ -176,6 +185,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function options(string $uri, $action = null): PendingRoute
     {
@@ -191,6 +201,7 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function head(string $uri, $action = null): PendingRoute
     {
@@ -205,6 +216,7 @@ class PendingRoute
      * @param  mixed  $action  Fallback action
      *
      * @return RouteCollection  The collection
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function fallback($action): RouteCollection
     {
@@ -221,6 +233,7 @@ class PendingRoute
      * @param  mixed   ...$args Additional arguments
      *
      * @return bool  True if route matched
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function dispatch(string $method, string $uri, ...$args): bool
     {
@@ -233,6 +246,7 @@ class PendingRoute
      * Get all routes (finalizes current route).
      *
      * @return array  Array of Route objects
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function getRoutes(): array
     {
@@ -248,6 +262,7 @@ class PendingRoute
      * @param  string  $uri     Request URI
      *
      * @return Route|null  Matched route or null
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function matchRoute(string $method, string $uri)
     {
@@ -263,6 +278,7 @@ class PendingRoute
      * @param  string  $pattern  Route pattern
      *
      * @return bool  True if exists
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function hasRoute(string $method, string $pattern): bool
     {
@@ -275,6 +291,7 @@ class PendingRoute
      * Check if routes are cacheable (finalizes current route).
      *
      * @return bool  True if cacheable
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function isCacheable(): bool
     {
@@ -287,6 +304,7 @@ class PendingRoute
      * Compile routes (finalizes current route).
      *
      * @return string  Serialized route data
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function compile(): string
     {
@@ -308,6 +326,7 @@ class PendingRoute
 
     /**
      * Auto-finalize on destruction.
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function __destruct()
     {

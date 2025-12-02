@@ -33,6 +33,7 @@ class RouteCompiler
      *                - 'constraints': Array of inline constraints
      *
      * @throws InvalidArgumentException  If conflicting constraints detected
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public static function compile(string $pattern, array $where_constraints = []): array
     {

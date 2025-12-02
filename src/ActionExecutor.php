@@ -28,6 +28,7 @@ class ActionExecutor
      * @param  array  $args    Additional arguments to pass to action
      *
      * @throws InvalidArgumentException  If action type is invalid
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public static function execute($action, array $params, array $args): void
     {
