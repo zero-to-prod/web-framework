@@ -46,6 +46,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function get(string $uri, $action = null): PendingRoute
     {
@@ -59,6 +60,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function post(string $uri, $action = null): PendingRoute
     {
@@ -72,6 +74,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function put(string $uri, $action = null): PendingRoute
     {
@@ -85,6 +88,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function patch(string $uri, $action = null): PendingRoute
     {
@@ -98,6 +102,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function delete(string $uri, $action = null): PendingRoute
     {
@@ -111,6 +116,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function options(string $uri, $action = null): PendingRoute
     {
@@ -124,6 +130,7 @@ class Routes
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  Pending route for fluent chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function head(string $uri, $action = null): PendingRoute
     {
@@ -138,6 +145,7 @@ class Routes
      * @return self  Returns $this for method chaining
      *
      * @throws InvalidArgumentException  If action is invalid
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function fallback($action): self
     {
@@ -158,6 +166,7 @@ class Routes
      * @param  mixed   ...$args  Additional arguments
      *
      * @return bool  True if route or fallback executed
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function dispatch(string $method, string $uri, ...$args): bool
     {
@@ -199,6 +208,7 @@ class Routes
      * Get all registered routes.
      *
      * @return array  Array of Route objects
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function getRoutes(): array
     {
@@ -212,6 +222,7 @@ class Routes
      * @param  string  $uri     Request URI
      *
      * @return HttpRoute|null  Matched route or null
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function matchRoute(string $method, string $uri): ?HttpRoute
     {
@@ -240,6 +251,7 @@ class Routes
      * @param  string  $pattern  Route pattern
      *
      * @return bool  True if route exists
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function hasRoute(string $method, string $pattern): bool
     {
@@ -250,6 +262,7 @@ class Routes
      * Check if all routes are cacheable.
      *
      * @return bool  True if all routes can be cached
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function isCacheable(): bool
     {
@@ -268,6 +281,7 @@ class Routes
      * @return string  Serialized route data
      *
      * @throws RuntimeException  If routes contain closures
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function compile(): string
     {
@@ -293,6 +307,7 @@ class Routes
      * @param  string  $data  Serialized route data
      *
      * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function loadCompiled(string $data): self
     {
@@ -313,6 +328,7 @@ class Routes
      * Called by PendingRoute when route is complete.
      *
      * @param  HttpRoute  $route  Route to store
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function finalizeRoute(HttpRoute $route): void
     {
@@ -410,6 +426,7 @@ class Routes
      * @param  array  $args    Additional arguments to pass to action
      *
      * @throws InvalidArgumentException  If action type is invalid
+     * @link https://github.com/zero-to-prod/web-framework
      */
     public function execute($action, array $params, array $args): void
     {
