@@ -112,11 +112,12 @@ class Route
         }
 
         $new_constraints = array_merge($this->constraints, [$param => $pattern]);
+        $compiled = RouteCompiler::compile($this->pattern, $new_constraints);
 
         return new self(
             $this->method,
             $this->pattern,
-            $this->recompileWithConstraints($new_constraints),
+            $compiled['regex'],
             $this->params,
             $this->optional_params,
             $new_constraints,
@@ -135,11 +136,12 @@ class Route
     public function withConstraints(array $constraints): Route
     {
         $new_constraints = array_merge($this->constraints, $constraints);
+        $compiled = RouteCompiler::compile($this->pattern, $new_constraints);
 
         return new self(
             $this->method,
             $this->pattern,
-            $this->recompileWithConstraints($new_constraints),
+            $compiled['regex'],
             $this->params,
             $this->optional_params,
             $new_constraints,
@@ -167,39 +169,6 @@ class Route
             $this->action,
             $name
         );
-    }
-
-    /**
-     * Recompile regex with updated constraints.
-     *
-     * @param  array  $constraints  Constraints to apply
-     *
-     * @return string  Compiled regex
-     */
-    private function recompileWithConstraints(array $constraints): string
-    {
-        preg_match_all('/\{([a-zA-Z_]+\w*)(?::(.+?))?(\?)?\}/', $this->pattern, $matches);
-
-        $search = [];
-        $replace = [];
-
-        foreach ($matches[0] as $i => $placeholder) {
-            $name = $matches[1][$i];
-            $inline = !empty($matches[2][$i]) ? $matches[2][$i] : null;
-            $is_optional = !empty($matches[3][$i]);
-
-            $constraint = $constraints[$name] ?? $inline ?? '[^/]+';
-
-            if ($is_optional) {
-                $search[] = '/'.$placeholder;
-                $replace[] = '(?:/('.$constraint.'))?';
-            } else {
-                $search[] = $placeholder;
-                $replace[] = '('.$constraint.')';
-            }
-        }
-
-        return '#^'.str_replace($search, $replace, $this->pattern).'$#';
     }
 
     /**

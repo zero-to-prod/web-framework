@@ -157,7 +157,7 @@ class RouteCollection
 
         if (isset($this->static_index[$key])) {
             $route = $this->static_index[$key];
-            $this->executeAction($route->action, [], $args);
+            ActionExecutor::execute($route->action, [], $args);
 
             return true;
         }
@@ -169,14 +169,14 @@ class RouteCollection
 
             if ($route->matches($path)) {
                 $params = $route->extractParams($path);
-                $this->executeAction($route->action, $params, $args);
+                ActionExecutor::execute($route->action, $params, $args);
 
                 return true;
             }
         }
 
         if ($this->not_found_handler !== null) {
-            $this->executeAction($this->not_found_handler, [], $args);
+            ActionExecutor::execute($this->not_found_handler, [], $args);
 
             return true;
         }
@@ -325,7 +325,7 @@ class RouteCollection
             throw new InvalidArgumentException("Action cannot be null for route: {$method} {$uri}");
         }
 
-        $compiled = $this->parseAndCompile($uri);
+        $compiled = RouteCompiler::compile($uri);
 
         $route = new Route(
             $method,
@@ -372,66 +372,6 @@ class RouteCollection
     }
 
     /**
-     * Parse URI pattern and compile to regex in single pass.
-     *
-     * @param  string  $pattern           URI pattern
-     * @param  array   $where_constraints Constraints from where() calls
-     *
-     * @return array  Compiled route data
-     *
-     * @throws InvalidArgumentException  If conflicting constraints
-     */
-    private function parseAndCompile(string $pattern, array $where_constraints = []): array
-    {
-        preg_match_all('/\{([a-zA-Z_]+\w*)(?::(.+?))?(\?)?\}/', $pattern, $matches);
-
-        $params = [];
-        $optional_params = [];
-        $constraints = [];
-        $search = [];
-        $replace = [];
-
-        foreach ($matches[0] as $i => $placeholder) {
-            $name = $matches[1][$i];
-            $inline = !empty($matches[2][$i]) ? $matches[2][$i] : null;
-            $is_optional = !empty($matches[3][$i]);
-
-            if ($inline && isset($where_constraints[$name])) {
-                throw new InvalidArgumentException(
-                    "Parameter '{$name}' has both inline constraint (:{$inline}) and where() constraint. Use only one."
-                );
-            }
-
-            $params[] = $name;
-
-            if ($is_optional) {
-                $optional_params[] = $name;
-            }
-
-            $constraint = $inline ?? $where_constraints[$name] ?? '[^/]+';
-
-            if ($inline) {
-                $constraints[$name] = $inline;
-            }
-
-            if ($is_optional) {
-                $search[] = '/'.$placeholder;
-                $replace[] = '(?:/('.$constraint.'))?';
-            } else {
-                $search[] = $placeholder;
-                $replace[] = '('.$constraint.')';
-            }
-        }
-
-        return [
-            'params' => $params,
-            'optional_params' => $optional_params,
-            'constraints' => $constraints,
-            'regex' => '#^'.str_replace($search, $replace, $pattern).'$#'
-        ];
-    }
-
-    /**
      * Strip query string from URI.
      *
      * @param  string  $uri  Request URI
@@ -443,45 +383,5 @@ class RouteCollection
         $path = strtok($uri, '?');
 
         return $path !== false ? $path : '';
-    }
-
-    /**
-     * Execute an action with parameters.
-     *
-     * @param  mixed  $action  Action to execute
-     * @param  array  $params  Route parameters
-     * @param  array  $args    Additional arguments
-     *
-     * @throws InvalidArgumentException  If action type is invalid
-     */
-    private function executeAction($action, array $params, array $args): void
-    {
-        if (is_array($action)) {
-            if (!isset($action[0], $action[1]) || isset($action[2])) {
-                throw new InvalidArgumentException('Controller array must have exactly 2 elements: [Class, \'method\']');
-            }
-
-            (new $action[0]())->{$action[1]}($params, ...$args);
-
-            return;
-        }
-
-        if (is_string($action)) {
-            if (method_exists($action, '__invoke')) {
-                (new $action())($params, ...$args);
-
-                return;
-            }
-
-            echo $action;
-
-            return;
-        }
-
-        if (!is_callable($action)) {
-            throw new InvalidArgumentException('Action must be callable, controller array, or string');
-        }
-
-        $action($params, ...$args);
     }
 }

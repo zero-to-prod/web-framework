@@ -38,10 +38,6 @@ class Routes
      */
     public static function dispatch($routes, string $method, string $uri, ...$args): bool
     {
-        if ($routes instanceof PendingRoute) {
-            return $routes->dispatch($method, $uri, ...$args);
-        }
-
         return $routes->dispatch($method, $uri, ...$args);
     }
 }

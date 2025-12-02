@@ -76,6 +76,25 @@ class PendingRoute
     }
 
     /**
+     * Explicitly register the route with the collection.
+     *
+     * This method provides explicit control over when the route is finalized
+     * and stored in the collection. Without calling this method, finalization
+     * will occur implicitly when:
+     * - Another route method is called (get, post, etc.)
+     * - A terminal method is called (dispatch, getRoutes, etc.)
+     * - The PendingRoute object is destroyed (via __destruct)
+     *
+     * @return RouteCollection  The parent collection for further chaining
+     */
+    public function register(): RouteCollection
+    {
+        $this->finalize();
+
+        return $this->collection;
+    }
+
+    /**
      * Define a GET route (finalizes current route).
      *
      * @param  string  $uri     URI pattern
