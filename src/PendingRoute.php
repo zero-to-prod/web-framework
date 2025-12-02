@@ -15,11 +15,11 @@ use InvalidArgumentException;
  */
 class PendingRoute
 {
-    /** @var RouteCollection */
-    private $collection;
+    /** @var Routes */
+    private $Routes;
 
-    /** @var Route */
-    private $route;
+    /** @var HttpRoute */
+    private $HttpRoute;
 
     /** @var bool */
     private $finalized = false;
@@ -27,14 +27,13 @@ class PendingRoute
     /**
      * Create a new pending route.
      *
-     * @param  RouteCollection  $collection  The parent collection
-     * @param  Route            $route       The route being configured
-     * @link https://github.com/zero-to-prod/web-framework
+     * @param  Routes     $Routes     The parent collection
+     * @param  HttpRoute  $HttpRoute  The route being configured
      */
-    public function __construct(RouteCollection $collection, Route $route)
+    public function __construct(Routes $Routes, HttpRoute $HttpRoute)
     {
-        $this->collection = $collection;
-        $this->route = $route;
+        $this->Routes = $Routes;
+        $this->HttpRoute = $HttpRoute;
     }
 
     /**
@@ -46,7 +45,6 @@ class PendingRoute
      * @return PendingRoute  Returns $this for method chaining
      *
      * @throws InvalidArgumentException  If constraint is invalid
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function where($param, $pattern = null): PendingRoute
     {
@@ -54,10 +52,10 @@ class PendingRoute
             foreach ($param as $key => $value) {
                 $this->validateConstraint($key, $value);
             }
-            $this->route = $this->route->withConstraints($param);
+            $this->HttpRoute = $this->HttpRoute->withConstraints($param);
         } else {
             $this->validateConstraint($param, $pattern);
-            $this->route = $this->route->withConstraint($param, $pattern);
+            $this->HttpRoute = $this->HttpRoute->withConstraint($param, $pattern);
         }
 
         return $this;
@@ -69,11 +67,10 @@ class PendingRoute
      * @param  string  $name  Route name
      *
      * @return PendingRoute  Returns $this for method chaining
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function name(string $name): PendingRoute
     {
-        $this->route = $this->route->withName($name);
+        $this->HttpRoute = $this->HttpRoute->withName($name);
 
         return $this;
     }
@@ -88,14 +85,13 @@ class PendingRoute
      * - A terminal method is called (dispatch, getRoutes, etc.)
      * - The PendingRoute object is destroyed (via __destruct)
      *
-     * @return RouteCollection  The parent collection for further chaining
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return Routes  The parent collection for further chaining
      */
-    public function register(): RouteCollection
+    public function register(): Routes
     {
         $this->finalize();
 
-        return $this->collection;
+        return $this->Routes;
     }
 
     /**
@@ -105,13 +101,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function get(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->get($uri, $action);
+        return $this->Routes->get($uri, $action);
     }
 
     /**
@@ -121,13 +116,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function post(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->post($uri, $action);
+        return $this->Routes->post($uri, $action);
     }
 
     /**
@@ -137,13 +131,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function put(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->put($uri, $action);
+        return $this->Routes->put($uri, $action);
     }
 
     /**
@@ -153,13 +146,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function patch(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->patch($uri, $action);
+        return $this->Routes->patch($uri, $action);
     }
 
     /**
@@ -169,13 +161,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function delete(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->delete($uri, $action);
+        return $this->Routes->delete($uri, $action);
     }
 
     /**
@@ -185,13 +176,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function options(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->options($uri, $action);
+        return $this->Routes->options($uri, $action);
     }
 
     /**
@@ -201,13 +191,12 @@ class PendingRoute
      * @param  mixed   $action  Action to execute
      *
      * @return PendingRoute  New pending route
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function head(string $uri, $action = null): PendingRoute
     {
         $this->finalize();
 
-        return $this->collection->head($uri, $action);
+        return $this->Routes->head($uri, $action);
     }
 
     /**
@@ -215,14 +204,13 @@ class PendingRoute
      *
      * @param  mixed  $action  Fallback action
      *
-     * @return RouteCollection  The collection
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return Routes  The collection
      */
-    public function fallback($action): RouteCollection
+    public function fallback($action): Routes
     {
         $this->finalize();
 
-        return $this->collection->fallback($action);
+        return $this->Routes->fallback($action);
     }
 
     /**
@@ -233,26 +221,24 @@ class PendingRoute
      * @param  mixed   ...$args Additional arguments
      *
      * @return bool  True if route matched
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function dispatch(string $method, string $uri, ...$args): bool
     {
         $this->finalize();
 
-        return $this->collection->dispatch($method, $uri, ...$args);
+        return $this->Routes->dispatch($method, $uri, ...$args);
     }
 
     /**
      * Get all routes (finalizes current route).
      *
      * @return array  Array of Route objects
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function getRoutes(): array
     {
         $this->finalize();
 
-        return $this->collection->getRoutes();
+        return $this->Routes->getRoutes();
     }
 
     /**
@@ -261,14 +247,13 @@ class PendingRoute
      * @param  string  $method  HTTP method
      * @param  string  $uri     Request URI
      *
-     * @return Route|null  Matched route or null
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return HttpRoute|null  Matched route or null
      */
     public function matchRoute(string $method, string $uri)
     {
         $this->finalize();
 
-        return $this->collection->matchRoute($method, $uri);
+        return $this->Routes->matchRoute($method, $uri);
     }
 
     /**
@@ -278,39 +263,36 @@ class PendingRoute
      * @param  string  $pattern  Route pattern
      *
      * @return bool  True if exists
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function hasRoute(string $method, string $pattern): bool
     {
         $this->finalize();
 
-        return $this->collection->hasRoute($method, $pattern);
+        return $this->Routes->hasRoute($method, $pattern);
     }
 
     /**
      * Check if routes are cacheable (finalizes current route).
      *
      * @return bool  True if cacheable
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function isCacheable(): bool
     {
         $this->finalize();
 
-        return $this->collection->isCacheable();
+        return $this->Routes->isCacheable();
     }
 
     /**
      * Compile routes (finalizes current route).
      *
      * @return string  Serialized route data
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function compile(): string
     {
         $this->finalize();
 
-        return $this->collection->compile();
+        return $this->Routes->compile();
     }
 
     /**
@@ -319,14 +301,13 @@ class PendingRoute
     private function finalize(): void
     {
         if (!$this->finalized) {
-            $this->collection->finalizeRoute($this->route);
+            $this->Routes->finalizeRoute($this->HttpRoute);
             $this->finalized = true;
         }
     }
 
     /**
      * Auto-finalize on destruction.
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function __destruct()
     {

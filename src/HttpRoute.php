@@ -12,59 +12,32 @@ use Closure;
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
-class Route
+class HttpRoute
 {
-    /**
-     * @var string
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var string */
     public $method;
 
-    /**
-     * @var string
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var string */
     public $pattern;
 
-    /**
-     * @var string
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var string */
     public $regex;
 
-    /**
-     * @var array
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var array */
     public $params;
 
-    /**
-     * @var array
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var array */
     public $optional_params;
 
-    /**
-     * @var array
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var array */
     public $constraints;
 
-    /**
-     * @var mixed
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var mixed */
     public $action;
 
-    /**
-     * @var string|null
-     * @link https://github.com/zero-to-prod/web-framework
-     */
+    /** @var string|null */
     public $name;
 
-    /**
-     * @link https://github.com/zero-to-prod/web-framework
-     */
     public function __construct(
         string $method,
         string $pattern,
@@ -91,7 +64,6 @@ class Route
      * @param  string  $uri  The URI to match against
      *
      * @return bool  True if route matches
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function matches(string $uri): bool
     {
@@ -104,7 +76,6 @@ class Route
      * @param  string  $uri  The URI to extract parameters from
      *
      * @return array  Associative array of parameter names to values
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function extractParams(string $uri): array
     {
@@ -132,10 +103,9 @@ class Route
      * @param  string|array  $param    Parameter name or array of constraints
      * @param  string|null   $pattern  Regex pattern (if $param is string)
      *
-     * @return Route  New route instance with updated constraint
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return HttpRoute  New route instance with updated constraint
      */
-    public function withConstraint($param, $pattern = null): Route
+    public function withConstraint($param, $pattern = null): HttpRoute
     {
         if (is_array($param)) {
             return $this->withConstraints($param);
@@ -161,10 +131,9 @@ class Route
      *
      * @param  array  $constraints  Array of param => pattern
      *
-     * @return Route  New route instance with updated constraints
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return HttpRoute  New route instance with updated constraints
      */
-    public function withConstraints(array $constraints): Route
+    public function withConstraints(array $constraints): HttpRoute
     {
         $new_constraints = array_merge($this->constraints, $constraints);
         $compiled = RouteCompiler::compile($this->pattern, $new_constraints);
@@ -186,10 +155,9 @@ class Route
      *
      * @param  string  $name  Route name
      *
-     * @return Route  New route instance with name
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return HttpRoute  New route instance with name
      */
-    public function withName(string $name): Route
+    public function withName(string $name): HttpRoute
     {
         return new self(
             $this->method,
@@ -207,7 +175,6 @@ class Route
      * Check if this route is cacheable (no closures).
      *
      * @return bool  True if route can be cached
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function isCacheable(): bool
     {
@@ -218,7 +185,6 @@ class Route
      * Convert route to array for serialization.
      *
      * @return array  Route data as associative array
-     * @link https://github.com/zero-to-prod/web-framework
      */
     public function toArray(): array
     {
@@ -239,10 +205,9 @@ class Route
      *
      * @param  array  $data  Route data from toArray()
      *
-     * @return Route  New route instance
-     * @link https://github.com/zero-to-prod/web-framework
+     * @return HttpRoute  New route instance
      */
-    public static function fromArray(array $data): Route
+    public static function fromArray(array $data): HttpRoute
     {
         return new self(
             $data['method'],
@@ -255,4 +220,5 @@ class Route
             $data['name'] ?? null
         );
     }
+
 }

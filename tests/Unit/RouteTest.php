@@ -3,19 +3,11 @@
 namespace Tests\Unit;
 
 use Tests\TestCase;
+use Zerotoprod\WebFramework\HttpRoute;
 use Zerotoprod\WebFramework\Routes;
-use Zerotoprod\WebFramework\RouteCollection;
-use Zerotoprod\WebFramework\Route;
 
-class RouteCollectionTest extends TestCase
+class RouteTest extends TestCase
 {
-    /** @test */
-    public function can_create_route_collection_via_facade(): void
-    {
-        $routes = Routes::collect();
-
-        $this->assertInstanceOf(RouteCollection::class, $routes);
-    }
 
     /** @test */
     public function can_register_static_route(): void
@@ -155,21 +147,6 @@ class RouteCollectionTest extends TestCase
     }
 
     /** @test */
-    public function can_use_static_dispatch_method(): void
-    {
-        $executed = false;
-
-        $routes = Routes::collect()
-            ->get('/test', function () use (&$executed) {
-                $executed = true;
-            });
-
-        Routes::dispatch($routes, 'GET', '/test');
-
-        $this->assertTrue($executed);
-    }
-
-    /** @test */
     public function match_route_returns_route_object(): void
     {
         $routes = Routes::collect()
@@ -178,7 +155,7 @@ class RouteCollectionTest extends TestCase
 
         $route = $routes->matchRoute('GET', '/users/123');
 
-        $this->assertInstanceOf(Route::class, $route);
+        $this->assertInstanceOf(HttpRoute::class, $route);
         $this->assertEquals('GET', $route->method);
         $this->assertEquals('/users/{id}', $route->pattern);
     }
@@ -987,7 +964,7 @@ class RouteCollectionTest extends TestCase
 
         $route = $routes->matchRoute('GET', '/static');
 
-        $this->assertInstanceOf(\Zerotoprod\WebFramework\Route::class, $route);
+        $this->assertInstanceOf(\Zerotoprod\WebFramework\HttpRoute::class, $route);
         $this->assertEquals('/static', $route->pattern);
     }
 
@@ -1091,6 +1068,132 @@ class RouteCollectionTest extends TestCase
 
         $this->assertEquals(['id' => '42'], TestController::$received_params);
     }
+
+    /** @test */
+    public function fallback_throws_exception_when_action_is_null(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Fallback action cannot be null');
+
+        Routes::collect()->fallback(null);
+    }
+
+    /** @test */
+    public function fallback_returns_self_for_chaining(): void
+    {
+        $routes = Routes::collect();
+
+        $result = $routes->fallback(function () {
+        });
+
+        $this->assertSame($routes, $result);
+    }
+
+    /** @test */
+    public function finalize_route_stores_route_in_collection(): void
+    {
+        $routes = Routes::collect();
+
+        $route = new HttpRoute(
+            'GET',
+            '/test',
+            '/^\/test$/',
+            [],
+            [],
+            [],
+            function () {
+            }
+        );
+
+        $routes->finalizeRoute($route);
+
+        $this->assertCount(1, $routes->getRoutes());
+        $this->assertTrue($routes->hasRoute('GET', '/test'));
+    }
+
+    /** @test */
+    public function execute_throws_exception_for_invalid_action_type(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Action must be callable, controller array, or string');
+
+        $routes = Routes::collect();
+        $routes->execute(12345, [], []);
+    }
+
+    /** @test */
+    public function controller_array_with_zero_elements_throws_exception(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Controller array must have exactly 2 elements');
+
+        $routes = Routes::collect()
+            ->get('/test', []);
+
+        $routes->dispatch('GET', '/test');
+    }
+
+    /** @test */
+    public function controller_array_with_one_element_throws_exception(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Controller array must have exactly 2 elements');
+
+        $routes = Routes::collect()
+            ->get('/test', [TestController::class]);
+
+        $routes->dispatch('GET', '/test');
+    }
+
+    /** @test */
+    public function controller_array_with_three_elements_throws_exception(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Controller array must have exactly 2 elements');
+
+        $routes = Routes::collect()
+            ->get('/test', [TestController::class, 'handle', 'extra']);
+
+        $routes->dispatch('GET', '/test');
+    }
+
+    /** @test */
+    public function load_compiled_returns_self_for_chaining(): void
+    {
+        $routes1 = Routes::collect()
+            ->get('/users', [TestController::class, 'handle']);
+
+        $compiled = $routes1->compile();
+
+        $routes2 = Routes::collect();
+        $result = $routes2->loadCompiled($compiled);
+
+        $this->assertSame($routes2, $result);
+    }
+
+    /** @test */
+    public function execute_with_controller_array_passes_additional_args(): void
+    {
+        $routes = Routes::collect()
+            ->get('/test', [TestControllerWithArgs::class, 'handleWithArgs']);
+
+        TestControllerWithArgs::$received_args = [];
+        $routes->dispatch('GET', '/test', 'arg1', 'arg2', 'arg3');
+
+        $this->assertEquals(['arg1', 'arg2', 'arg3'], TestControllerWithArgs::$received_args);
+    }
+
+    /** @test */
+    public function execute_with_invokable_controller_passes_additional_args(): void
+    {
+        $routes = Routes::collect()
+            ->get('/test', InvokeableControllerWithArgs::class);
+
+        InvokeableControllerWithArgs::$received_args = [];
+        $routes->dispatch('GET', '/test', 'foo', 'bar');
+
+        $this->assertEquals(['foo', 'bar'], InvokeableControllerWithArgs::$received_args);
+    }
 }
 
 class TestController
@@ -1116,5 +1219,25 @@ class InvokeableTestController
     public function __invoke(array $params): void
     {
         self::$invoked = true;
+    }
+}
+
+class TestControllerWithArgs
+{
+    public static $received_args = [];
+
+    public function handleWithArgs(array $params, ...$args): void
+    {
+        self::$received_args = $args;
+    }
+}
+
+class InvokeableControllerWithArgs
+{
+    public static $received_args = [];
+
+    public function __invoke(array $params, ...$args): void
+    {
+        self::$received_args = $args;
     }
 }
