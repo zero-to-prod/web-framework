@@ -2,6 +2,7 @@
 
 namespace Zerotoprod\WebFramework;
 
+use Closure;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -18,7 +19,7 @@ use RuntimeException;
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
-class Routes
+class Router
 {
     /** @var array */
     private $routes = [];
@@ -38,6 +39,31 @@ class Routes
     /** @var callable|null */
     private $not_found_handler = null;
 
+    /** @var array Global middleware applied to all routes */
+    private $global_middleware = [];
+    /**
+     * @var string
+     */
+    private $method;
+    /**
+     * @var string
+     */
+    private $uri;
+    /**
+     * @var array
+     */
+    private $args;
+
+    /**
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function __construct(string $method, string $uri, ...$args)
+    {
+        $this->method = $method;
+        $this->uri = $uri;
+        $this->args = $args;
+    }
+
     /**
      * Create a new route collection.
      *
@@ -45,9 +71,9 @@ class Routes
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public static function collect(): self
+    public static function for(string $method, string $uri, ...$args): self
     {
-        return new self();
+        return new self($method, $uri, ...$args);
     }
 
     /**
@@ -170,6 +196,25 @@ class Routes
     }
 
     /**
+     * Register global middleware applied to all routes.
+     *
+     * @param  mixed  $middleware  Single middleware (callable/class name) or array
+     *
+     * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function middleware($middleware): self
+    {
+        if (is_array($middleware)) {
+            $this->global_middleware = array_merge($this->global_middleware, $middleware);
+        } else {
+            $this->global_middleware[] = $middleware;
+        }
+
+        return $this;
+    }
+
+    /**
      * Dispatch a request with triple-level optimization.
      *
      * Performance improvements:
@@ -178,27 +223,23 @@ class Routes
      * - Single regex call per route (matchAndExtract eliminates duplicate preg_match)
      * - O(1) method filtering as fallback
      *
-     * @param  string  $method   HTTP method
-     * @param  string  $uri      Request URI
-     * @param  mixed   ...$args  Additional arguments
-     *
      * @return bool  True if route or fallback executed
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function dispatch(string $method, string $uri, ...$args): bool
+    public function dispatch(): bool
     {
-        $path = $this->stripQueryString($uri);
-        $key = $method.':'.$path;
+        $path = $this->stripQueryString($this->uri);
+        $key = $this->method.':'.$path;
 
         // Level 1: O(1) lookup for static routes
         if (isset($this->static_index[$key])) {
-            $this->execute($this->static_index[$key]->action, [], $args);
+            $this->executeWithMiddleware($this->static_index[$key], [], ...$this->args);
             return true;
         }
 
         // Level 2: Prefix-based lookup (narrow down candidates dramatically)
         $prefix = $this->extractPrefix($path);
-        $prefix_key = $method.':'.$prefix;
+        $prefix_key = $this->method.':'.$prefix;
 
         if (isset($this->prefix_index[$prefix_key])) {
             // Only check routes with matching prefix
@@ -206,15 +247,15 @@ class Routes
             foreach ($this->prefix_index[$prefix_key] as $route) {
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->execute($route->action, $params, $args);
+                    $this->executeWithMiddleware($route, $params, ...$this->args);
                     return true;
                 }
             }
         }
 
         // Level 3: Fall back to method-based filtering for routes without specific prefix
-        if (isset($this->method_index[$method])) {
-            foreach ($this->method_index[$method] as $route) {
+        if (isset($this->method_index[$this->method])) {
+            foreach ($this->method_index[$this->method] as $route) {
                 //  Skip if already checked via prefix
                 if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
                     continue;
@@ -222,14 +263,14 @@ class Routes
 
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->execute($route->action, $params, $args);
+                    $this->executeWithMiddleware($route, $params, ...$this->args);
                     return true;
                 }
             }
         }
 
         if ($this->not_found_handler !== null) {
-            $this->execute($this->not_found_handler, [], $args);
+            $this->executeWithMiddleware(null, [], ...$this->args);
             return true;
         }
 
@@ -240,11 +281,11 @@ class Routes
      * Get all registered routes.
      *
      * @return array  Array of Route objects
+     * @return array  Array of Route objects
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
-     * @return array  Array of Route objects
-     * @link https://github.com/zero-to-prod/web-framework
+     * @link     https://github.com/zero-to-prod/web-framework
      */
     public function getRoutes(): array
     {
@@ -256,13 +297,13 @@ class Routes
      *
      * Uses same triple-level optimization as dispatch().
      *
-     * @internal This method is primarily for testing and debugging.
-     *           Production code should use dispatch() instead.
-     *
      * @param  string  $method  HTTP method
      * @param  string  $uri     Request URI
      *
      * @return HttpRoute|null  Matched route or null
+     * @internal This method is primarily for testing and debugging.
+     *           Production code should use dispatch() instead.
+     *
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
@@ -331,13 +372,12 @@ class Routes
      */
     public function isCacheable(): bool
     {
-        foreach ($this->routes as $route) {
-            if (!$route->isCacheable()) {
-                return false;
-            }
-        }
-
-        return true;
+        return !array_filter($this->global_middleware, function ($mw) {
+                return $mw instanceof Closure;
+            })
+            && !array_filter($this->routes, function ($route) {
+                return !$route->isCacheable();
+            });
     }
 
     /**
@@ -354,16 +394,18 @@ class Routes
             throw new RuntimeException(
                 'Cannot compile routes with closures for caching. '.
                 'Closures cannot be serialized in PHP. '.
-                'Use controller arrays [Controller::class, \'method\'] or '.
-                'invokeable classes Controller::class instead.'
+                'Use controller arrays [Controller::class, \'method\'], '.
+                'invokeable classes Controller::class, or '.
+                'middleware class names instead of closures.'
             );
         }
 
-        return serialize(
-            array_map(static function ($route) {
+        return serialize([
+            'routes' => array_map(static function ($route) {
                 return $route->toArray();
-            }, $this->routes)
-        );
+            }, $this->routes),
+            'global_middleware' => $this->global_middleware
+        ]);
     }
 
     /**
@@ -376,13 +418,13 @@ class Routes
      */
     public function loadCompiled(string $data): self
     {
-        $routes_data = unserialize($data, ['allowed_classes' => true]);
+        $compiled = unserialize($data, ['allowed_classes' => true]);
 
-        if (is_array($routes_data)) {
-            foreach ($routes_data as $routeData) {
-                $route = HttpRoute::fromArray($routeData);
-                $this->storeRoute($route);
-            }
+        $routes = isset($compiled[0]) ? $compiled : ($compiled['routes'] ?? []);
+        $this->global_middleware = $compiled['global_middleware'] ?? [];
+
+        foreach ($routes as $routeData) {
+            $this->storeRoute(HttpRoute::fromArray($routeData));
         }
 
         return $this;
@@ -476,25 +518,6 @@ class Routes
     }
 
     /**
-     * Build static route index for O(1) lookups.
-     */
-    private function buildStaticIndex(): void
-    {
-        if ($this->static_index !== null) {
-            return;
-        }
-
-        $this->static_index = [];
-
-        foreach ($this->routes as $route) {
-            if (empty($route->params)) {
-                $key = $route->method.':'.$route->pattern;
-                $this->static_index[$key] = $route;
-            }
-        }
-    }
-
-    /**
      * Strip query string from URI.
      *
      * @param  string  $uri  Request URI
@@ -532,6 +555,7 @@ class Routes
             if ($last_slash === false || $last_slash === 0) {
                 return '/';
             }
+
             return substr($pattern, 0, $last_slash);
         }
 
@@ -548,6 +572,7 @@ class Routes
         }
 
         $result = substr($prefix, 0, $last_slash);
+
         return $result === '' ? '/' : $result;
     }
 
@@ -596,6 +621,42 @@ class Routes
         }
 
         $action($params, ...$args);
+    }
+
+    /**
+     * Execute route action with middleware pipeline.
+     *
+     * @param  HttpRoute|null  $route   Matched route (null for fallback)
+     * @param  array           $params  Route parameters
+     * @param  array           $args    Additional dispatch arguments
+     *
+     * @return void
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    private function executeWithMiddleware($route, array $params, ...$args): void
+    {
+        $middleware = $route && $route->middleware
+            ? array_merge($this->global_middleware, $route->middleware)
+            : $this->global_middleware;
+
+        if (empty($middleware)) {
+            $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
+
+            return;
+        }
+
+        $pipeline = function () use ($route, $params, $args) {
+            $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
+        };
+
+        foreach (array_reverse($middleware) as $mw) {
+            $next = $pipeline;
+            $pipeline = function () use ($mw, $next, $args) {
+                (is_string($mw) ? new $mw() : $mw)($next, ...$args);
+            };
+        }
+
+        $pipeline();
     }
 
 }

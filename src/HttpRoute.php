@@ -63,6 +63,12 @@ class HttpRoute
     public $name;
 
     /**
+     * @var array
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public $middleware = [];
+
+    /**
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function __construct(
@@ -73,7 +79,8 @@ class HttpRoute
         array $optional_params,
         array $constraints,
         $action,
-        $name = null
+        $name = null,
+        array $middleware = []
     ) {
         $this->method = $method;
         $this->pattern = $pattern;
@@ -83,6 +90,7 @@ class HttpRoute
         $this->constraints = $constraints;
         $this->action = $action;
         $this->name = $name;
+        $this->middleware = $middleware;
     }
 
     /**
@@ -184,7 +192,8 @@ class HttpRoute
             $this->optional_params,
             $new_constraints,
             $this->action,
-            $this->name
+            $this->name,
+            $this->middleware
         );
     }
 
@@ -209,7 +218,8 @@ class HttpRoute
             $this->optional_params,
             $new_constraints,
             $this->action,
-            $this->name
+            $this->name,
+            $this->middleware
         );
     }
 
@@ -231,7 +241,31 @@ class HttpRoute
             $this->optional_params,
             $this->constraints,
             $this->action,
-            $name
+            $name,
+            $this->middleware
+        );
+    }
+
+    /**
+     * Create a new route with additional middleware.
+     *
+     * @param  mixed  $middleware  Single middleware (callable/class name) or array
+     *
+     * @return HttpRoute  New route instance with middleware
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function withMiddleware($middleware): HttpRoute
+    {
+        return new self(
+            $this->method,
+            $this->pattern,
+            $this->regex,
+            $this->params,
+            $this->optional_params,
+            $this->constraints,
+            $this->action,
+            $this->name,
+            array_merge($this->middleware, (array) $middleware)
         );
     }
 
@@ -243,7 +277,10 @@ class HttpRoute
      */
     public function isCacheable(): bool
     {
-        return !($this->action instanceof Closure);
+        return !$this->action instanceof Closure
+            && !array_filter($this->middleware, function ($mw) {
+                return $mw instanceof Closure;
+            });
     }
 
     /**
@@ -262,7 +299,8 @@ class HttpRoute
             'optional_params' => $this->optional_params,
             'constraints' => $this->constraints,
             'action' => $this->action,
-            'name' => $this->name
+            'name' => $this->name,
+            'middleware' => $this->middleware
         ];
     }
 
@@ -284,7 +322,8 @@ class HttpRoute
             $data['optional_params'],
             $data['constraints'],
             $data['action'],
-            $data['name'] ?? null
+            $data['name'] ?? null,
+            $data['middleware'] ?? []
         );
     }
 

@@ -46,6 +46,7 @@
         - [Route Naming](#route-naming)
         - [Additional Arguments (Dependency Injection)](#additional-arguments-dependency-injection)
         - [404 Fallback Handler](#404-fallback-handler)
+        - [Middleware](#middleware)
         - [Route Caching](#route-caching)
         - [Method Chaining](#method-chaining-1)
         - [Route Matching Behavior](#route-matching-behavior)
@@ -290,16 +291,16 @@ The routing system provides a fluent, Laravel-style API for defining HTTP routes
 #### Quick Start
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-// Create route collection
-$routes = Routes::collect()
+// Create router for this request with context
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
     ->get('/users', [UserController::class, 'index'])
     ->get('/users/{id}', [UserController::class, 'show'])
     ->post('/users', [UserController::class, 'create']);
 
 // Dispatch request
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 #### Supported HTTP Methods
@@ -488,37 +489,37 @@ Route names are stored in the `HttpRoute` object and can be accessed when needed
 
 #### Additional Arguments (Dependency Injection)
 
-Pass dependencies to all route handlers via the dispatch method:
+Pass dependencies to all route handlers and middleware via Router::for():
 
 ```php
 $database = new Database();
 $logger = new Logger();
 
-$routes = Route::collect()
-    ->get('/users', function ($params, $db, $log) {
+// Dependencies passed as additional arguments to Router::for()
+$routes = Router::for('GET', '/users', $_SERVER, $database, $logger)
+    ->get('/users', function ($params, $server, $db, $log) {
         $log->info('Fetching users');
         $users = $db->query('SELECT * FROM users');
         echo json_encode($users);
     });
 
-// Dependencies passed as additional arguments
-$routes->dispatch('GET', '/users', $database, $logger);
+$routes->dispatch();
 ```
 
 **With controllers:**
 
 ```php
 class UserController {
-    public function index($params, $db, $logger) {
+    public function index($params, $server, $db, $logger) {
         $logger->info('UserController::index called');
         return $db->fetchAll('users');
     }
 }
 
-$routes->get('/api/users', [UserController::class, 'index']);
+$routes = Router::for('GET', '/api/users', $_SERVER, $database, $logger)
+    ->get('/api/users', [UserController::class, 'index']);
 
-// Dispatch with dependencies
-$routes->dispatch('GET', '/api/users', $database, $logger);
+$routes->dispatch();
 ```
 
 #### 404 Fallback Handler
@@ -526,7 +527,7 @@ $routes->dispatch('GET', '/api/users', $database, $logger);
 Define a fallback handler for unmatched routes:
 
 ```php
-$routes = Route::collect()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
     ->get('/', 'Home Page')
     ->get('/about', 'About Us')
     ->fallback(function ($params) {
@@ -534,7 +535,7 @@ $routes = Route::collect()
         echo '404 - Page Not Found';
     });
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 **Fallback with controller:**
@@ -547,18 +548,432 @@ class NotFoundController {
     }
 }
 
-$routes->fallback(NotFoundController::class);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
+    ->get('/', 'Home')
+    ->fallback(NotFoundController::class);
+
+$routes->dispatch();
 ```
 
 **Fallback with dependencies:**
 
 ```php
-$routes->fallback(function ($params, $logger) {
-    $logger->warning('404: ' . $_SERVER['REQUEST_URI']);
-    echo '404 - Not Found';
+$logger = new Logger();
+
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER, $logger)
+    ->fallback(function ($params, $server, $log) {
+        $log->warning('404: ' . $server['REQUEST_URI']);
+        echo '404 - Not Found';
+    });
+
+$routes->dispatch();
+```
+
+#### Middleware
+
+##### Overview
+
+Middleware provides a convenient mechanism for inspecting and filtering HTTP requests entering your routes. Middleware executes before route actions, making it perfect for authentication, logging, CORS, rate limiting, and more.
+
+Middleware receives a `$next` callable followed by any arguments passed to `Router::for()`, allowing you to pass custom context objects, dependencies, or the `$_SERVER` superglobal.
+
+##### Quick Start
+
+```php
+use Zerotoprod\WebFramework\Router;
+
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->middleware(function ($next, $server) {
+        // Pre-action logic
+        error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
+
+        // Continue to next middleware or action
+        $next();
+
+        // Post-action logic (optional)
+        error_log("Request completed");
+    })
+    ->get('/users', [UserController::class, 'index']);
+
+$routes->dispatch();
+```
+
+##### Middleware Signature
+
+All middleware must be callable with this signature:
+
+```php
+function ($next, ...$context) {
+    // $next is a closure to continue the middleware chain
+    // $context contains all arguments passed to Router::for()
+}
+```
+
+**More explicitly**:
+```php
+function ($next, $server, $db = null, $logger = null) {
+    // Middleware declares exactly what it expects
+    // $server would be first context arg from Router::for()
+    // $db would be second context arg (optional)
+    // $logger would be third context arg (optional)
+}
+```
+
+**Access to context arguments:**
+- Context args are passed to `Router::for($method, $uri, ...$context)`
+- First arg is typically `$_SERVER` (by convention)
+- Additional args can be any dependencies (database, logger, etc.)
+- Middleware declares what it needs via function parameters
+
+##### Global Middleware
+
+Register middleware that applies to all routes:
+
+```php
+// Single middleware
+$routes->middleware(LoggingMiddleware::class);
+
+// Multiple middleware (executes in order)
+$routes->middleware([
+    AuthenticationMiddleware::class,
+    CorsMiddleware::class,
+    LoggingMiddleware::class
+]);
+
+// Chain middleware registration
+$routes->middleware(AuthMiddleware::class)
+       ->middleware(LogMiddleware::class);
+```
+
+##### Per-Route Middleware
+
+Add middleware to specific routes:
+
+```php
+// Single middleware
+$routes->get('/admin', [AdminController::class, 'index'])
+    ->middleware(AdminAuthMiddleware::class);
+
+// Multiple middleware
+$routes->post('/users', [UserController::class, 'store'])
+    ->middleware([
+        ValidateInputMiddleware::class,
+        RateLimitMiddleware::class
+    ]);
+
+// Chain with other route methods
+$routes->get('/profile/{id}', [ProfileController::class, 'show'])
+    ->where('id', '\d+')
+    ->middleware(AuthMiddleware::class)
+    ->name('profile.show');
+```
+
+##### Creating Middleware Classes
+
+**Invokable Class:**
+
+```php
+class AuthenticationMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        // Pre-action: Check authentication
+        if (!isset($_SESSION['user_id'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return; // Don't call $next() - halt execution
+        }
+
+        // Pass control to next middleware or action
+        $next();
+
+        // Post-action: Optional cleanup or logging
+        error_log("Request completed by user: {$_SESSION['user_id']}");
+    }
+}
+
+// Usage
+$routes->dispatch();
+```
+
+**Closure Middleware:**
+
+```php
+$routes->middleware(function ($next, $server) {
+    $start = microtime(true);
+
+    // Continue to action
+    $next();
+
+    // Log execution time
+    $duration = microtime(true) - $start;
+    error_log("{$server['REQUEST_METHOD']} {$server['REQUEST_URI']} - {$duration}s");
 });
 
-$routes->dispatch('GET', '/invalid', $logger);
+$routes->dispatch();
+```
+
+##### Execution Order
+
+Middleware executes in this order:
+
+1. **Global middleware** (in registration order)
+2. **Route-specific middleware** (in registration order)
+3. **Route action**
+4. **Route-specific middleware post-processing** (in reverse order)
+5. **Global middleware post-processing** (in reverse order)
+
+```php
+$routes = Router::for('GET', '/test')
+    ->middleware(function ($next) {
+        echo "1. Global before\n";
+        $next();
+        echo "6. Global after\n";
+    })
+    ->get('/test', function () {
+        echo "4. Action\n";
+    })
+    ->middleware(function ($next) {
+        echo "2. Route before\n";
+        $next();
+        echo "5. Route after\n";
+    });
+
+$routes->dispatch();
+
+// Output: 1. Global before → 2. Route before → 4. Action → 5. Route after → 6. Global after
+```
+
+##### Halting Execution
+
+Middleware can stop request processing by not calling `$next()`:
+
+```php
+class RateLimitMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        $ip = $server['REMOTE_ADDR'] ?? 'unknown';
+
+        if ($this->isRateLimited($ip)) {
+            http_response_code(429);
+            echo json_encode(['error' => 'Too many requests']);
+            return; // Halt - action will not execute
+        }
+
+        $next(); // Continue processing
+    }
+}
+```
+
+##### Practical Examples
+
+**Authentication:**
+
+```php
+class AuthMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        if (empty($_SESSION['user_id'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        $next();
+    }
+}
+```
+
+**CORS:**
+
+```php
+class CorsMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        // Continue to action first
+        $next();
+
+        // Add CORS headers after action executes
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE');
+
+        if (($server['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+            http_response_code(204);
+        }
+    }
+}
+```
+
+**Logging:**
+
+```php
+class LoggingMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        $method = $server['REQUEST_METHOD'] ?? 'UNKNOWN';
+        $uri = $server['REQUEST_URI'] ?? '/';
+        $ip = $server['REMOTE_ADDR'] ?? 'unknown';
+
+        $start = microtime(true);
+
+        $next();
+
+        $duration = microtime(true) - $start;
+        error_log("$method $uri from $ip - {$duration}s");
+    }
+}
+```
+
+**With Multiple Dependencies:**
+
+```php
+class UserMiddleware
+{
+    public function __invoke($next, $server, $db, $logger)
+    {
+        // Access all dependencies passed to Router::for()
+        $logger->info("Request from: {$server['REMOTE_ADDR']}");
+
+        $next();
+
+        $logger->info("Request completed");
+    }
+}
+
+$database = new Database();
+$logger = new Logger();
+
+$routes = Router::for('GET', '/users', $_SERVER, $database, $logger)
+    ->middleware(UserMiddleware::class)
+    ->get('/users', [UserController::class, 'index']);
+
+$routes->dispatch();
+```
+
+##### Complete Example
+
+```php
+use Zerotoprod\WebFramework\Router;
+
+// Create middleware classes
+class AuthMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        if (!isset($_SESSION['authenticated'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        $next();
+    }
+}
+
+class LogMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
+        $next();
+    }
+}
+
+class AdminMiddleware
+{
+    public function __invoke($next, $server)
+    {
+        if ($_SESSION['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        $next();
+    }
+}
+
+// Define routes with middleware
+$routes = Router::for()
+    // Global middleware for all routes
+    ->middleware([
+        LogMiddleware::class,
+        AuthMiddleware::class
+    ])
+
+    // Public routes (global middleware still applies)
+    ->get('/api/status', 'OK')
+
+    // Protected admin routes
+    ->get('/admin/users', [AdminController::class, 'users'])
+        ->middleware(AdminMiddleware::class)
+    ->post('/admin/users', [AdminController::class, 'createUser'])
+        ->middleware([
+            AdminMiddleware::class,
+            ValidateInputMiddleware::class
+        ])
+
+    // Fallback
+    ->fallback(function () {
+        http_response_code(404);
+        echo json_encode(['error' => 'Not Found']);
+    });
+
+// Dispatch
+$routes->dispatch();
+```
+
+##### Middleware and Caching
+
+**⚠️ Important: Closure Limitation**
+
+Just like routes, **middleware with closures cannot be cached** because PHP closures cannot be serialized.
+
+✅ **Cacheable middleware:**
+- Invokable classes: `AuthMiddleware::class`
+
+❌ **Non-cacheable middleware:**
+- Closures: `function ($next, $server) { ... }`
+
+```php
+// ✅ Can be cached (all middleware are class names)
+$routes = Router::for('', '')
+    ->middleware(AuthMiddleware::class)
+    ->middleware(LoggingMiddleware::class)
+    ->get('/users', [UserController::class, 'index'])
+        ->middleware(RateLimitMiddleware::class);
+
+if ($routes->isCacheable()) {
+    file_put_contents('cache/routes.cache', $routes->compile());
+}
+
+// ❌ Cannot be cached (contains closure middleware)
+$routes = Router::for('GET', '/users', $_SERVER)
+    ->middleware(function ($next, $server) {
+        // Closure cannot be serialized
+        echo "Logging...";
+        $next();
+    })
+    ->get('/users', [UserController::class, 'index']);
+
+// Will throw RuntimeException
+try {
+    $routes->compile();
+} catch (RuntimeException $e) {
+    // "Cannot compile routes with closures..."
+}
+```
+
+When loading cached routes, middleware is automatically restored:
+
+```php
+$compiled = file_get_contents('cache/routes.cache');
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->loadCompiled($compiled);
+
+// Both global and per-route middleware are restored
+$routes->dispatch();
 ```
 
 #### Route Caching
@@ -567,23 +982,25 @@ Compile routes for production performance:
 
 ##### ⚠️ Important: Closure Limitation
 
-**Routes with closures cannot be cached** because PHP closures cannot be serialized.
+**Routes and middleware with closures cannot be cached** because PHP closures cannot be serialized.
 
 ✅ **Cacheable route types:**
 - Controller arrays: `[UserController::class, 'index']`
 - Invokeable classes: `UserController::class`
 - String responses: `'Hello World'`
+- Class-based middleware: `AuthMiddleware::class`
 
 ❌ **Non-cacheable route types:**
 - Closures: `function ($params) { echo 'Hello'; }`
+- Closure middleware: `function ($next, $server) { ... }`
 
 ##### Compiling Routes
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 // Define routes (using cacheable formats only)
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->get('/users', [UserController::class, 'index'])
     ->get('/users/{id:\d+}', [UserController::class, 'show'])
     ->post('/users', [UserController::class, 'create']);
@@ -596,9 +1013,9 @@ file_put_contents('cache/routes.cache', $compiled);
 ##### Checking Cacheability
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->get('/users', [UserController::class, 'index'])
     ->get('/posts', function ($params) {
         echo 'Posts'; // Closure - not cacheable!
@@ -614,15 +1031,16 @@ if ($routes->isCacheable()) {
 ##### Loading Cached Routes
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 // Load compiled routes from cache
 $compiled = file_get_contents('cache/routes.cache');
 
-$routes = Routes::collect()->loadCompiled($compiled);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->loadCompiled($compiled);
 
 // Dispatch immediately - no route definitions needed
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 ##### Complete Caching Example
@@ -630,9 +1048,9 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 **build-cache.php** (run once to build cache):
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->get('/', 'Home')
     ->get('/users', [UserController::class, 'index'])
     ->get('/users/{id:\d+}', [UserController::class, 'show']);
@@ -648,12 +1066,13 @@ echo "✓ Route cache built successfully\n";
 **index.php** (production entry point):
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 $compiled = file_get_contents('cache/routes.cache');
-$routes = Routes::collect()->loadCompiled($compiled);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->loadCompiled($compiled);
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 **Performance impact:**
@@ -666,9 +1085,9 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 Routes support fluent method chaining through the `PendingRoute` class:
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
     ->get('/', 'Home Page')
     ->get('/about', 'About Us')
     ->get('/users/{id:\d+}', [UserController::class, 'show'])
@@ -680,13 +1099,13 @@ $routes = Routes::collect()
         echo '404 - Not Found';
     });
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 **How it works:**
 - HTTP methods (`get()`, `post()`, etc.) return a `PendingRoute` instance
-- `PendingRoute` proxies HTTP methods back to `Routes`, allowing continuous chaining
-- Configuration methods (`where()`, `name()`) operate on `PendingRoute` and return self
+- `PendingRoute` proxies HTTP methods back to `Router`, allowing continuous chaining
+- Configuration methods (`where()`, `name()`, `middleware()`) operate on `PendingRoute` and return self
 - Routes are automatically finalized when you define the next route or call a terminal method (`dispatch()`, `fallback()`)
 
 This allows you to:
@@ -765,19 +1184,19 @@ $routes->get('/users/{id}', function ($params) {
 #### Complete Example
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 class UserController {
     public function index($params) {
         echo json_encode(['users' => ['Alice', 'Bob']]);
     }
 
-    public function show($params, $db) {
+    public function show($params, $server, $db) {
         $user = $db->find('users', $params['id']);
         echo json_encode($user);
     }
 
-    public function create($params, $db) {
+    public function create($params, $server, $db) {
         $userId = $db->insert('users', $_POST);
         echo json_encode(['id' => $userId]);
     }
@@ -786,8 +1205,8 @@ class UserController {
 // Initialize database
 $database = new Database();
 
-// Define routes
-$routes = Routes::collect()
+// Define routes with context
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER, $database)
     ->get('/', 'Welcome to the API')
     ->get('/users', [UserController::class, 'index'])
         ->name('users.index')
@@ -809,8 +1228,8 @@ $routes = Routes::collect()
         echo json_encode(['error' => '404 Not Found']);
     });
 
-// Dispatch with dependency injection
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $database);
+// Dispatch
+$routes->dispatch();
 ```
 
 ## Contributing

@@ -15,7 +15,7 @@ use InvalidArgumentException;
  */
 class PendingRoute
 {
-    /** @var Routes */
+    /** @var Router */
     private $Routes;
 
     /** @var HttpRoute */
@@ -27,11 +27,12 @@ class PendingRoute
     /**
      * Create a new pending route.
      *
-     * @param  Routes     $Routes     The parent collection
+     * @param  Router     $Routes     The parent collection
      * @param  HttpRoute  $HttpRoute  The route being configured
+     *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(Routes $Routes, HttpRoute $HttpRoute)
+    public function __construct(Router $Routes, HttpRoute $HttpRoute)
     {
         $this->Routes = $Routes;
         $this->HttpRoute = $HttpRoute;
@@ -79,6 +80,21 @@ class PendingRoute
     }
 
     /**
+     * Add middleware to the route.
+     *
+     * @param  mixed  $middleware  Single middleware (callable/class name) or array
+     *
+     * @return PendingRoute  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function middleware($middleware): PendingRoute
+    {
+        $this->HttpRoute = $this->HttpRoute->withMiddleware($middleware);
+
+        return $this;
+    }
+
+    /**
      * Explicitly register the route with the collection.
      *
      * This method provides explicit control over when the route is finalized
@@ -88,10 +104,10 @@ class PendingRoute
      * - A terminal method is called (dispatch, getRoutes, etc.)
      * - The PendingRoute object is destroyed (via __destruct)
      *
-     * @return Routes  The parent collection for further chaining
+     * @return Router  The parent collection for further chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function register(): Routes
+    public function register(): Router
     {
         $this->finalize();
 
@@ -215,10 +231,10 @@ class PendingRoute
      *
      * @param  mixed  $action  Fallback action
      *
-     * @return Routes  The collection
+     * @return Router  The collection
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function fallback($action): Routes
+    public function fallback($action): Router
     {
         $this->finalize();
 
@@ -235,11 +251,11 @@ class PendingRoute
      * @return bool  True if route matched
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function dispatch(string $method, string $uri, ...$args): bool
+    public function dispatch(): bool
     {
         $this->finalize();
 
-        return $this->Routes->dispatch($method, $uri, ...$args);
+        return $this->Routes->dispatch();
     }
 
     /**
