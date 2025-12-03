@@ -495,15 +495,15 @@ Pass dependencies to all route handlers via the dispatch method:
 $database = new Database();
 $logger = new Logger();
 
-$routes = Route::collect()
+// Dependencies passed as additional arguments
+$routes = Route::collect('GET', '/users', $database, $logger)
     ->get('/users', function ($params, $db, $log) {
         $log->info('Fetching users');
         $users = $db->query('SELECT * FROM users');
         echo json_encode($users);
     });
 
-// Dependencies passed as additional arguments
-$routes->dispatch('GET', '/users', $database, $logger);
+$routes->dispatch();
 ```
 
 **With controllers:**
@@ -518,8 +518,7 @@ class UserController {
 
 $routes->get('/api/users', [UserController::class, 'index']);
 
-// Dispatch with dependencies
-$routes->dispatch('GET', '/api/users', $database, $logger);
+$routes->dispatch();
 ```
 
 #### 404 Fallback Handler
@@ -559,7 +558,7 @@ $routes->fallback(function ($params, $logger) {
     echo '404 - Not Found';
 });
 
-$routes->dispatch('GET', '/invalid', $logger);
+$routes->dispatch();
 ```
 
 #### Middleware
@@ -686,7 +685,7 @@ class AuthenticationMiddleware
 }
 
 // Usage
-$routes->dispatch('GET', '/admin', $_SERVER);
+$routes->dispatch();
 ```
 
 **Closure Middleware:**
@@ -703,7 +702,7 @@ $routes->middleware(function ($next, $server) {
     error_log("{$server['REQUEST_METHOD']} {$server['REQUEST_URI']} - {$duration}s");
 });
 
-$routes->dispatch('GET', '/users', $_SERVER);
+$routes->dispatch();
 ```
 
 ##### Execution Order
@@ -732,7 +731,7 @@ $routes = Routes::collect()
         echo "5. Route after\n";
     });
 
-$routes->dispatch('GET', '/test');
+$routes->dispatch();
 
 // Output: 1. Global before → 2. Route before → 4. Action → 5. Route after → 6. Global after
 ```
@@ -758,7 +757,7 @@ class RateLimitMiddleware
     }
 }
 
-$routes->dispatch('GET', '/api/resource', $_SERVER);
+$routes->dispatch();
 ```
 
 ##### Practical Examples
@@ -779,7 +778,7 @@ class AuthMiddleware
     }
 }
 
-$routes->dispatch('GET', '/admin', $_SERVER);
+$routes->dispatch();
 ```
 
 **CORS:**
@@ -802,7 +801,7 @@ class CorsMiddleware
     }
 }
 
-$routes->dispatch('GET', '/api/resource', $_SERVER);
+$routes->dispatch();
 ```
 
 **Logging:**
@@ -825,7 +824,7 @@ class LoggingMiddleware
     }
 }
 
-$routes->dispatch('GET', '/users', $_SERVER);
+$routes->dispatch();
 ```
 
 **With Multiple Dependencies:**
@@ -847,7 +846,7 @@ class UserMiddleware
 $database = new Database();
 $logger = new Logger();
 
-$routes->dispatch('GET', '/users', $_SERVER, $database, $logger);
+$routes->dispatch();
 ```
 
 ##### Complete Example

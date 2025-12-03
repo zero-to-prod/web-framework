@@ -13,7 +13,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global_before';
                 $next();
@@ -23,7 +23,7 @@ class MiddlewareTest extends TestCase
                 $execution_order[] = 'action';
             });
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertEquals(['global_before', 'action', 'global_after'], $execution_order);
     }
@@ -33,7 +33,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global';
                 $next();
@@ -46,7 +46,7 @@ class MiddlewareTest extends TestCase
                 $next();
             });
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertEquals(['global', 'route', 'action'], $execution_order);
     }
@@ -60,14 +60,14 @@ class MiddlewareTest extends TestCase
         $db = new \stdClass();
         $db->name = 'database';
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test', $server, $db)
             ->middleware(function ($next, ...$context) use (&$received_args) {
                 $received_args = $context;
                 $next();
             })
             ->get('/test', function () {});
 
-        $routes->dispatch('GET', '/test', $server, $db);
+        $routes->dispatch();
 
         $this->assertIsArray($received_args);
         $this->assertCount(2, $received_args);
@@ -80,7 +80,7 @@ class MiddlewareTest extends TestCase
     {
         $action_executed = false;
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->middleware(function ($next) {
                 echo 'Halted';
             })
@@ -88,7 +88,7 @@ class MiddlewareTest extends TestCase
                 $action_executed = true;
             });
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertFalse($action_executed);
     }
@@ -98,7 +98,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->middleware([
                 function ($next) use (&$execution_order) {
                     $execution_order[] = 'middleware1';
@@ -117,7 +117,7 @@ class MiddlewareTest extends TestCase
                 $execution_order[] = 'action';
             });
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertEquals(['middleware1', 'middleware2', 'middleware3', 'action'], $execution_order);
     }
@@ -127,11 +127,11 @@ class MiddlewareTest extends TestCase
     {
         TestInvokableMiddleware::$executed = false;
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->get('/test', function () {})
             ->middleware(TestInvokableMiddleware::class);
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertTrue(TestInvokableMiddleware::$executed);
     }
@@ -139,7 +139,7 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function routes_with_closure_middleware_are_not_cacheable(): void
     {
-        $routes = Routes::collect()
+        $routes = Routes::collect('', '')
             ->middleware(function ($next) {
                 $next();
             })
@@ -151,7 +151,7 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function routes_with_class_middleware_are_cacheable(): void
     {
-        $routes = Routes::collect()
+        $routes = Routes::collect('', '')
             ->middleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method']);
 
@@ -161,14 +161,14 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function can_compile_and_load_routes_with_middleware(): void
     {
-        $routes1 = Routes::collect()
+        $routes1 = Routes::collect('', '')
             ->middleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method'])
                 ->middleware(AnotherMiddleware::class);
 
         $compiled = $routes1->compile();
 
-        $routes2 = Routes::collect()->loadCompiled($compiled);
+        $routes2 = Routes::collect('', '')->loadCompiled($compiled);
 
         $matched_route = $routes2->matchRoute('GET', '/test');
         $this->assertNotNull($matched_route);
@@ -181,14 +181,14 @@ class MiddlewareTest extends TestCase
     {
         $middleware_executed = false;
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/other')
             ->get('/test', function () {})
             ->middleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
                 $next();
             });
 
-        $routes->dispatch('GET', '/other');
+        $routes->dispatch();
 
         $this->assertFalse($middleware_executed);
     }
@@ -199,7 +199,7 @@ class MiddlewareTest extends TestCase
         $middleware_executed = false;
         $fallback_executed = false;
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/non-existent')
             ->middleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
                 $next();
@@ -209,7 +209,7 @@ class MiddlewareTest extends TestCase
                 $fallback_executed = true;
             });
 
-        $routes->dispatch('GET', '/non-existent');
+        $routes->dispatch();
 
         $this->assertTrue($middleware_executed);
         $this->assertTrue($fallback_executed);
@@ -220,7 +220,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global1';
                 $next();
@@ -241,7 +241,7 @@ class MiddlewareTest extends TestCase
                 $next();
             });
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertEquals(['global1', 'global2', 'route1', 'route2', 'action'], $execution_order);
     }
@@ -251,12 +251,12 @@ class MiddlewareTest extends TestCase
     {
         $action_executed = false;
 
-        $routes = Routes::collect()
+        $routes = Routes::collect('GET', '/test')
             ->get('/test', function () use (&$action_executed) {
                 $action_executed = true;
             });
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch();
 
         $this->assertTrue($action_executed);
     }

@@ -2,9 +2,9 @@
 
 namespace Zerotoprod\WebFramework;
 
+use Closure;
 use InvalidArgumentException;
 use RuntimeException;
-use Closure;
 
 /**
  * Static facade for route collection and dispatch.
@@ -41,6 +41,25 @@ class Routes
 
     /** @var array Global middleware applied to all routes */
     private $global_middleware = [];
+    /**
+     * @var string
+     */
+    private $method;
+    /**
+     * @var string
+     */
+    private $uri;
+    /**
+     * @var array
+     */
+    private $args;
+
+    public function __construct(string $method, string $uri, ...$args)
+    {
+        $this->method = $method;
+        $this->uri = $uri;
+        $this->args = $args;
+    }
 
     /**
      * Create a new route collection.
@@ -49,9 +68,9 @@ class Routes
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public static function collect(): self
+    public static function collect(string $method, string $uri, ...$args): self
     {
-        return new self();
+        return new self($method, $uri, ...$args);
     }
 
     /**
@@ -201,27 +220,23 @@ class Routes
      * - Single regex call per route (matchAndExtract eliminates duplicate preg_match)
      * - O(1) method filtering as fallback
      *
-     * @param  string  $method   HTTP method
-     * @param  string  $uri      Request URI
-     * @param  mixed   ...$args  Additional arguments
-     *
      * @return bool  True if route or fallback executed
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function dispatch(string $method, string $uri, ...$args): bool
+    public function dispatch(): bool
     {
-        $path = $this->stripQueryString($uri);
-        $key = $method.':'.$path;
+        $path = $this->stripQueryString($this->uri);
+        $key = $this->method.':'.$path;
 
         // Level 1: O(1) lookup for static routes
         if (isset($this->static_index[$key])) {
-            $this->executeWithMiddleware($this->static_index[$key], [], $args);
+            $this->executeWithMiddleware($this->static_index[$key], [], ...$this->args);
             return true;
         }
 
         // Level 2: Prefix-based lookup (narrow down candidates dramatically)
         $prefix = $this->extractPrefix($path);
-        $prefix_key = $method.':'.$prefix;
+        $prefix_key = $this->method.':'.$prefix;
 
         if (isset($this->prefix_index[$prefix_key])) {
             // Only check routes with matching prefix
@@ -229,15 +244,15 @@ class Routes
             foreach ($this->prefix_index[$prefix_key] as $route) {
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->executeWithMiddleware($route, $params, $args);
+                    $this->executeWithMiddleware($route, $params, ...$this->args);
                     return true;
                 }
             }
         }
 
         // Level 3: Fall back to method-based filtering for routes without specific prefix
-        if (isset($this->method_index[$method])) {
-            foreach ($this->method_index[$method] as $route) {
+        if (isset($this->method_index[$this->method])) {
+            foreach ($this->method_index[$this->method] as $route) {
                 //  Skip if already checked via prefix
                 if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
                     continue;
@@ -245,14 +260,14 @@ class Routes
 
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->executeWithMiddleware($route, $params, $args);
+                    $this->executeWithMiddleware($route, $params, ...$this->args);
                     return true;
                 }
             }
         }
 
         if ($this->not_found_handler !== null) {
-            $this->executeWithMiddleware(null, [], $args);
+            $this->executeWithMiddleware(null, [], ...$this->args);
             return true;
         }
 
@@ -263,11 +278,11 @@ class Routes
      * Get all registered routes.
      *
      * @return array  Array of Route objects
+     * @return array  Array of Route objects
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
-     * @return array  Array of Route objects
-     * @link https://github.com/zero-to-prod/web-framework
+     * @link     https://github.com/zero-to-prod/web-framework
      */
     public function getRoutes(): array
     {
@@ -279,13 +294,13 @@ class Routes
      *
      * Uses same triple-level optimization as dispatch().
      *
-     * @internal This method is primarily for testing and debugging.
-     *           Production code should use dispatch() instead.
-     *
      * @param  string  $method  HTTP method
      * @param  string  $uri     Request URI
      *
      * @return HttpRoute|null  Matched route or null
+     * @internal This method is primarily for testing and debugging.
+     *           Production code should use dispatch() instead.
+     *
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
@@ -355,10 +370,11 @@ class Routes
     public function isCacheable(): bool
     {
         return !array_filter($this->global_middleware, function ($mw) {
-            return $mw instanceof Closure;
-        }) && !array_filter($this->routes, function ($route) {
-            return !$route->isCacheable();
-        });
+                return $mw instanceof Closure;
+            })
+            && !array_filter($this->routes, function ($route) {
+                return !$route->isCacheable();
+            });
     }
 
     /**
@@ -536,6 +552,7 @@ class Routes
             if ($last_slash === false || $last_slash === 0) {
                 return '/';
             }
+
             return substr($pattern, 0, $last_slash);
         }
 
@@ -552,6 +569,7 @@ class Routes
         }
 
         $result = substr($prefix, 0, $last_slash);
+
         return $result === '' ? '/' : $result;
     }
 
@@ -612,7 +630,7 @@ class Routes
      * @return void
      * @link https://github.com/zero-to-prod/web-framework
      */
-    private function executeWithMiddleware($route, array $params, array $args): void
+    private function executeWithMiddleware($route, array $params, ...$args): void
     {
         $middleware = $route && $route->middleware
             ? array_merge($this->global_middleware, $route->middleware)
@@ -620,6 +638,7 @@ class Routes
 
         if (empty($middleware)) {
             $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
+
             return;
         }
 

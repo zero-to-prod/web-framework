@@ -250,11 +250,11 @@ class PendingRoute
      * @return bool  True if route matched
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function dispatch(string $method, string $uri, ...$args): bool
+    public function dispatch(): bool
     {
         $this->finalize();
 
-        return $this->Routes->dispatch($method, $uri, ...$args);
+        return $this->Routes->dispatch();
     }
 
     /**
