@@ -46,6 +46,7 @@
         - [Route Naming](#route-naming)
         - [Additional Arguments (Dependency Injection)](#additional-arguments-dependency-injection)
         - [404 Fallback Handler](#404-fallback-handler)
+        - [Middleware](#middleware)
         - [Route Caching](#route-caching)
         - [Method Chaining](#method-chaining-1)
         - [Route Matching Behavior](#route-matching-behavior)
@@ -561,21 +562,387 @@ $routes->fallback(function ($params, $logger) {
 $routes->dispatch('GET', '/invalid', $logger);
 ```
 
+#### Middleware
+
+##### Overview
+
+Middleware provides a convenient mechanism for inspecting and filtering HTTP requests entering your routes. Middleware executes before route actions, making it perfect for authentication, logging, CORS, rate limiting, and more.
+
+The middleware signature follows Laravel's pattern, receiving the `$_SERVER` superglobal and a `$next` callable.
+
+##### Quick Start
+
+```php
+use Zerotoprod\WebFramework\Routes;
+
+$routes = Routes::collect()
+    ->middleware(function ($server, $next) {
+        // Pre-action logic
+        error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
+
+        // Continue to next middleware or action
+        $next();
+
+        // Post-action logic (optional)
+        error_log("Request completed");
+    })
+    ->get('/users', [UserController::class, 'index']);
+
+$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+```
+
+##### Middleware Signature
+
+All middleware must be callable with this signature:
+
+```php
+function ($server, $next) {
+    // $server is the unmodified $_SERVER superglobal
+    // $next is a closure to continue the middleware chain
+}
+```
+
+**Access to context:**
+- `$server['REQUEST_METHOD']` - HTTP method (GET, POST, etc.)
+- `$server['REQUEST_URI']` - Request URI
+- `$server['REMOTE_ADDR']` - Client IP address
+- `$server['HTTP_*']` - All HTTP headers
+- All other standard `$_SERVER` variables
+
+##### Global Middleware
+
+Register middleware that applies to all routes:
+
+```php
+// Single middleware
+$routes->middleware(LoggingMiddleware::class);
+
+// Multiple middleware (executes in order)
+$routes->middleware([
+    AuthenticationMiddleware::class,
+    CorsMiddleware::class,
+    LoggingMiddleware::class
+]);
+
+// Chain middleware registration
+$routes->middleware(AuthMiddleware::class)
+       ->middleware(LogMiddleware::class);
+```
+
+##### Per-Route Middleware
+
+Add middleware to specific routes:
+
+```php
+// Single middleware
+$routes->get('/admin', [AdminController::class, 'index'])
+    ->middleware(AdminAuthMiddleware::class);
+
+// Multiple middleware
+$routes->post('/users', [UserController::class, 'store'])
+    ->middleware([
+        ValidateInputMiddleware::class,
+        RateLimitMiddleware::class
+    ]);
+
+// Chain with other route methods
+$routes->get('/profile/{id}', [ProfileController::class, 'show'])
+    ->where('id', '\d+')
+    ->middleware(AuthMiddleware::class)
+    ->name('profile.show');
+```
+
+##### Creating Middleware Classes
+
+**Invokable Class:**
+
+```php
+class AuthenticationMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        // Pre-action: Check authentication
+        if (!isset($_SESSION['user_id'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return; // Don't call $next() - halt execution
+        }
+
+        // Pass control to next middleware or action
+        $next();
+
+        // Post-action: Optional cleanup or logging
+        error_log("Request completed by user: {$_SESSION['user_id']}");
+    }
+}
+```
+
+**Closure Middleware:**
+
+```php
+$routes->middleware(function ($server, $next) {
+    $start = microtime(true);
+
+    // Continue to action
+    $next();
+
+    // Log execution time
+    $duration = microtime(true) - $start;
+    error_log("{$server['REQUEST_METHOD']} {$server['REQUEST_URI']} - {$duration}s");
+});
+```
+
+##### Execution Order
+
+Middleware executes in this order:
+
+1. **Global middleware** (in registration order)
+2. **Route-specific middleware** (in registration order)
+3. **Route action**
+4. **Route-specific middleware post-processing** (in reverse order)
+5. **Global middleware post-processing** (in reverse order)
+
+```php
+$routes = Routes::collect()
+    ->middleware(function ($server, $next) {
+        echo "1. Global before\n";
+        $next();
+        echo "6. Global after\n";
+    })
+    ->get('/test', function () {
+        echo "4. Action\n";
+    })
+    ->middleware(function ($server, $next) {
+        echo "2. Route before\n";
+        $next();
+        echo "5. Route after\n";
+    });
+
+// Output: 1. Global before → 2. Route before → 4. Action → 5. Route after → 6. Global after
+```
+
+##### Halting Execution
+
+Middleware can stop request processing by not calling `$next()`:
+
+```php
+class RateLimitMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        $ip = $server['REMOTE_ADDR'] ?? 'unknown';
+
+        if ($this->isRateLimited($ip)) {
+            http_response_code(429);
+            echo json_encode(['error' => 'Too many requests']);
+            return; // Halt - action will not execute
+        }
+
+        $next(); // Continue processing
+    }
+}
+```
+
+##### Practical Examples
+
+**Authentication:**
+
+```php
+class AuthMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        if (empty($_SESSION['user_id'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        $next();
+    }
+}
+```
+
+**CORS:**
+
+```php
+class CorsMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        // Continue to action first
+        $next();
+
+        // Add CORS headers after action executes
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE');
+
+        if (($server['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+            http_response_code(204);
+        }
+    }
+}
+```
+
+**Logging:**
+
+```php
+class LoggingMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        $method = $server['REQUEST_METHOD'] ?? 'UNKNOWN';
+        $uri = $server['REQUEST_URI'] ?? '/';
+        $ip = $server['REMOTE_ADDR'] ?? 'unknown';
+
+        $start = microtime(true);
+
+        $next();
+
+        $duration = microtime(true) - $start;
+        error_log("$method $uri from $ip - {$duration}s");
+    }
+}
+```
+
+##### Complete Example
+
+```php
+use Zerotoprod\WebFramework\Routes;
+
+// Create middleware classes
+class AuthMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        if (!isset($_SESSION['authenticated'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        $next();
+    }
+}
+
+class LogMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
+        $next();
+    }
+}
+
+class AdminMiddleware
+{
+    public function __invoke($server, $next)
+    {
+        if ($_SESSION['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        $next();
+    }
+}
+
+// Define routes with middleware
+$routes = Routes::collect()
+    // Global middleware for all routes
+    ->middleware([
+        LogMiddleware::class,
+        AuthMiddleware::class
+    ])
+
+    // Public routes (global middleware still applies)
+    ->get('/api/status', 'OK')
+
+    // Protected admin routes
+    ->get('/admin/users', [AdminController::class, 'users'])
+        ->middleware(AdminMiddleware::class)
+    ->post('/admin/users', [AdminController::class, 'createUser'])
+        ->middleware([
+            AdminMiddleware::class,
+            ValidateInputMiddleware::class
+        ])
+
+    // Fallback
+    ->fallback(function () {
+        http_response_code(404);
+        echo json_encode(['error' => 'Not Found']);
+    });
+
+// Dispatch
+$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+```
+
+##### Middleware and Caching
+
+**⚠️ Important: Closure Limitation**
+
+Just like routes, **middleware with closures cannot be cached** because PHP closures cannot be serialized.
+
+✅ **Cacheable middleware:**
+- Invokable classes: `AuthMiddleware::class`
+
+❌ **Non-cacheable middleware:**
+- Closures: `function ($server, $next) { ... }`
+
+```php
+// ✅ Can be cached (all middleware are class names)
+$routes = Routes::collect()
+    ->middleware(AuthMiddleware::class)
+    ->middleware(LoggingMiddleware::class)
+    ->get('/users', [UserController::class, 'index'])
+        ->middleware(RateLimitMiddleware::class);
+
+if ($routes->isCacheable()) {
+    file_put_contents('cache/routes.cache', $routes->compile());
+}
+
+// ❌ Cannot be cached (contains closure middleware)
+$routes = Routes::collect()
+    ->middleware(function ($server, $next) {
+        // Closure cannot be serialized
+        echo "Logging...";
+        $next();
+    })
+    ->get('/users', [UserController::class, 'index']);
+
+// Will throw RuntimeException
+try {
+    $routes->compile();
+} catch (RuntimeException $e) {
+    // "Cannot compile routes with closures..."
+}
+```
+
+When loading cached routes, middleware is automatically restored:
+
+```php
+$compiled = file_get_contents('cache/routes.cache');
+$routes = Routes::collect()->loadCompiled($compiled);
+
+// Both global and per-route middleware are restored
+$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+```
+
 #### Route Caching
 
 Compile routes for production performance:
 
 ##### ⚠️ Important: Closure Limitation
 
-**Routes with closures cannot be cached** because PHP closures cannot be serialized.
+**Routes and middleware with closures cannot be cached** because PHP closures cannot be serialized.
 
 ✅ **Cacheable route types:**
 - Controller arrays: `[UserController::class, 'index']`
 - Invokeable classes: `UserController::class`
 - String responses: `'Hello World'`
+- Class-based middleware: `AuthMiddleware::class`
 
 ❌ **Non-cacheable route types:**
 - Closures: `function ($params) { echo 'Hello'; }`
+- Closure middleware: `function ($server, $next) { ... }`
 
 ##### Compiling Routes
 

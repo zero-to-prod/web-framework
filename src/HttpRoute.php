@@ -256,10 +256,6 @@ class HttpRoute
      */
     public function withMiddleware($middleware): HttpRoute
     {
-        $new_middleware = is_array($middleware)
-            ? array_merge($this->middleware, $middleware)
-            : array_merge($this->middleware, [$middleware]);
-
         return new self(
             $this->method,
             $this->pattern,
@@ -269,7 +265,7 @@ class HttpRoute
             $this->constraints,
             $this->action,
             $this->name,
-            $new_middleware
+            array_merge($this->middleware, (array) $middleware)
         );
     }
 
@@ -281,17 +277,10 @@ class HttpRoute
      */
     public function isCacheable(): bool
     {
-        if ($this->action instanceof Closure) {
-            return false;
-        }
-
-        foreach ($this->middleware as $mw) {
-            if ($mw instanceof Closure) {
-                return false;
-            }
-        }
-
-        return true;
+        return !$this->action instanceof Closure
+            && !array_filter($this->middleware, function ($mw) {
+                return $mw instanceof Closure;
+            });
     }
 
     /**

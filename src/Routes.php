@@ -4,6 +4,7 @@ namespace Zerotoprod\WebFramework;
 
 use InvalidArgumentException;
 use RuntimeException;
+use Closure;
 
 /**
  * Static facade for route collection and dispatch.
@@ -353,19 +354,11 @@ class Routes
      */
     public function isCacheable(): bool
     {
-        foreach ($this->global_middleware as $mw) {
-            if ($mw instanceof \Closure) {
-                return false;
-            }
-        }
-
-        foreach ($this->routes as $route) {
-            if (!$route->isCacheable()) {
-                return false;
-            }
-        }
-
-        return true;
+        return !array_filter($this->global_middleware, function ($mw) {
+            return $mw instanceof Closure;
+        }) && !array_filter($this->routes, function ($route) {
+            return !$route->isCacheable();
+        });
     }
 
     /**
@@ -406,21 +399,13 @@ class Routes
      */
     public function loadCompiled(string $data): self
     {
-        $compiled_data = unserialize($data, ['allowed_classes' => true]);
+        $compiled = unserialize($data, ['allowed_classes' => true]);
 
-        if (is_array($compiled_data)) {
-            if (isset($compiled_data[0])) {
-                $routes_data = $compiled_data;
-                $this->global_middleware = [];
-            } else {
-                $routes_data = $compiled_data['routes'] ?? [];
-                $this->global_middleware = $compiled_data['global_middleware'] ?? [];
-            }
+        $routes = isset($compiled[0]) ? $compiled : ($compiled['routes'] ?? []);
+        $this->global_middleware = $compiled['global_middleware'] ?? [];
 
-            foreach ($routes_data as $routeData) {
-                $route = HttpRoute::fromArray($routeData);
-                $this->storeRoute($route);
-            }
+        foreach ($routes as $routeData) {
+            $this->storeRoute(HttpRoute::fromArray($routeData));
         }
 
         return $this;
@@ -648,54 +633,27 @@ class Routes
      */
     private function executeWithMiddleware($route, array $params, array $args): void
     {
-        $middleware = $this->global_middleware;
-
-        if ($route !== null && !empty($route->middleware)) {
-            $middleware = array_merge($middleware, $route->middleware);
-        }
-
-        $action = $route !== null ? $route->action : $this->not_found_handler;
+        $middleware = $route && $route->middleware
+            ? array_merge($this->global_middleware, $route->middleware)
+            : $this->global_middleware;
 
         if (empty($middleware)) {
-            $this->execute($action, $params, $args);
+            $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
             return;
         }
 
-        $pipeline = function () use ($action, $params, $args) {
-            $this->execute($action, $params, $args);
+        $pipeline = function () use ($route, $params, $args) {
+            $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
         };
 
         foreach (array_reverse($middleware) as $mw) {
             $next = $pipeline;
             $pipeline = function () use ($mw, $next) {
-                $this->resolveMiddleware($mw)($_SERVER, $next);
+                (is_string($mw) ? new $mw() : $mw)($_SERVER, $next);
             };
         }
 
         $pipeline();
-    }
-
-    /**
-     * Resolve middleware to a callable.
-     *
-     * @param  mixed  $middleware  Middleware callable or class name
-     *
-     * @return callable
-     * @throws InvalidArgumentException  If middleware cannot be resolved
-     */
-    private function resolveMiddleware($middleware): callable
-    {
-        if ($middleware instanceof \Closure || is_callable($middleware)) {
-            return $middleware;
-        }
-
-        if (is_string($middleware) && class_exists($middleware)) {
-            return new $middleware();
-        }
-
-        throw new InvalidArgumentException(
-            'Middleware must be a callable, closure, or invokable class name'
-        );
     }
 
 }
