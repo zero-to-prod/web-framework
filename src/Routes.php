@@ -38,6 +38,9 @@ class Routes
     /** @var callable|null */
     private $not_found_handler = null;
 
+    /** @var array Global middleware applied to all routes */
+    private $global_middleware = [];
+
     /**
      * Create a new route collection.
      *
@@ -170,6 +173,25 @@ class Routes
     }
 
     /**
+     * Register global middleware applied to all routes.
+     *
+     * @param  mixed  $middleware  Single middleware (callable/class name) or array
+     *
+     * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function middleware($middleware): self
+    {
+        if (is_array($middleware)) {
+            $this->global_middleware = array_merge($this->global_middleware, $middleware);
+        } else {
+            $this->global_middleware[] = $middleware;
+        }
+
+        return $this;
+    }
+
+    /**
      * Dispatch a request with triple-level optimization.
      *
      * Performance improvements:
@@ -192,7 +214,7 @@ class Routes
 
         // Level 1: O(1) lookup for static routes
         if (isset($this->static_index[$key])) {
-            $this->execute($this->static_index[$key]->action, [], $args);
+            $this->executeWithMiddleware($this->static_index[$key], [], $args);
             return true;
         }
 
@@ -206,7 +228,7 @@ class Routes
             foreach ($this->prefix_index[$prefix_key] as $route) {
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->execute($route->action, $params, $args);
+                    $this->executeWithMiddleware($route, $params, $args);
                     return true;
                 }
             }
@@ -222,14 +244,14 @@ class Routes
 
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->execute($route->action, $params, $args);
+                    $this->executeWithMiddleware($route, $params, $args);
                     return true;
                 }
             }
         }
 
         if ($this->not_found_handler !== null) {
-            $this->execute($this->not_found_handler, [], $args);
+            $this->executeWithMiddleware(null, [], $args);
             return true;
         }
 
@@ -331,6 +353,12 @@ class Routes
      */
     public function isCacheable(): bool
     {
+        foreach ($this->global_middleware as $mw) {
+            if ($mw instanceof \Closure) {
+                return false;
+            }
+        }
+
         foreach ($this->routes as $route) {
             if (!$route->isCacheable()) {
                 return false;
@@ -354,16 +382,18 @@ class Routes
             throw new RuntimeException(
                 'Cannot compile routes with closures for caching. '.
                 'Closures cannot be serialized in PHP. '.
-                'Use controller arrays [Controller::class, \'method\'] or '.
-                'invokeable classes Controller::class instead.'
+                'Use controller arrays [Controller::class, \'method\'], '.
+                'invokeable classes Controller::class, or '.
+                'middleware class names instead of closures.'
             );
         }
 
-        return serialize(
-            array_map(static function ($route) {
+        return serialize([
+            'routes' => array_map(static function ($route) {
                 return $route->toArray();
-            }, $this->routes)
-        );
+            }, $this->routes),
+            'global_middleware' => $this->global_middleware
+        ]);
     }
 
     /**
@@ -376,9 +406,17 @@ class Routes
      */
     public function loadCompiled(string $data): self
     {
-        $routes_data = unserialize($data, ['allowed_classes' => true]);
+        $compiled_data = unserialize($data, ['allowed_classes' => true]);
 
-        if (is_array($routes_data)) {
+        if (is_array($compiled_data)) {
+            if (isset($compiled_data[0])) {
+                $routes_data = $compiled_data;
+                $this->global_middleware = [];
+            } else {
+                $routes_data = $compiled_data['routes'] ?? [];
+                $this->global_middleware = $compiled_data['global_middleware'] ?? [];
+            }
+
             foreach ($routes_data as $routeData) {
                 $route = HttpRoute::fromArray($routeData);
                 $this->storeRoute($route);
@@ -596,6 +634,39 @@ class Routes
         }
 
         $action($params, ...$args);
+    }
+
+    /**
+     * Execute route action with middleware pipeline.
+     *
+     * @param  HttpRoute|null  $route   Matched route (null for fallback)
+     * @param  array           $params  Route parameters
+     * @param  array           $args    Additional dispatch arguments
+     *
+     * @return void
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    private function executeWithMiddleware($route, array $params, array $args): void
+    {
+        $middleware = $this->global_middleware;
+
+        if ($route !== null && !empty($route->middleware)) {
+            $middleware = array_merge($middleware, $route->middleware);
+        }
+
+        $action = $route !== null ? $route->action : $this->not_found_handler;
+
+        if (empty($middleware)) {
+            $this->execute($action, $params, $args);
+            return;
+        }
+
+        $final_action = function () use ($action, $params, $args) {
+            $this->execute($action, $params, $args);
+        };
+
+        $pipeline = new MiddlewarePipeline($middleware);
+        $pipeline->execute($final_action);
     }
 
 }

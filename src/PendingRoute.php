@@ -79,6 +79,21 @@ class PendingRoute
     }
 
     /**
+     * Add middleware to the route.
+     *
+     * @param  mixed  $middleware  Single middleware (callable/class name) or array
+     *
+     * @return PendingRoute  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function middleware($middleware): PendingRoute
+    {
+        $this->HttpRoute = $this->HttpRoute->withMiddleware($middleware);
+
+        return $this;
+    }
+
+    /**
      * Explicitly register the route with the collection.
      *
      * This method provides explicit control over when the route is finalized
