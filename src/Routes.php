@@ -11,6 +11,11 @@ use RuntimeException;
  * Provides convenient static methods for creating route collections
  * and dispatching requests.
  *
+ * Performance optimizations:
+ * - Method-based indexing for O(1) method filtering
+ * - Build indices during registration, not during dispatch
+ * - Reduced iterations through route matching
+ *
  * @link https://github.com/zero-to-prod/web-framework
  */
 class Routes
@@ -18,8 +23,14 @@ class Routes
     /** @var array */
     private $routes = [];
 
-    /** @var array|null */
-    private $static_index = null;
+    /** @var array Indexed by method:path for O(1) static route lookup */
+    private $static_index = [];
+
+    /** @var array Indexed by method for quick method filtering */
+    private $method_index = [];
+
+    /** @var array Indexed by method:prefix for prefix-based lookup */
+    private $prefix_index = [];
 
     /** @var array */
     private $pattern_index = [];
@@ -159,7 +170,13 @@ class Routes
     }
 
     /**
-     * Dispatch a request.
+     * Dispatch a request with triple-level optimization.
+     *
+     * Performance improvements:
+     * - O(1) static route lookup (hash map for exact matches)
+     * - O(1) prefix-based filtering (check only routes with matching prefix)
+     * - Single regex call per route (matchAndExtract eliminates duplicate preg_match)
+     * - O(1) method filtering as fallback
      *
      * @param  string  $method   HTTP method
      * @param  string  $uri      Request URI
@@ -171,33 +188,48 @@ class Routes
     public function dispatch(string $method, string $uri, ...$args): bool
     {
         $path = $this->stripQueryString($uri);
-        $this->buildStaticIndex();
-
         $key = $method.':'.$path;
 
+        // Level 1: O(1) lookup for static routes
         if (isset($this->static_index[$key])) {
-            $route = $this->static_index[$key];
-            $this->execute($route->action, [], $args);
-
+            $this->execute($this->static_index[$key]->action, [], $args);
             return true;
         }
 
-        foreach ($this->routes as $route) {
-            if ($route->method !== $method) {
-                continue;
+        // Level 2: Prefix-based lookup (narrow down candidates dramatically)
+        $prefix = $this->extractPrefix($path);
+        $prefix_key = $method.':'.$prefix;
+
+        if (isset($this->prefix_index[$prefix_key])) {
+            // Only check routes with matching prefix
+            // Use matchAndExtract to avoid double regex call
+            foreach ($this->prefix_index[$prefix_key] as $route) {
+                $params = [];
+                if ($route->matchAndExtract($path, $params)) {
+                    $this->execute($route->action, $params, $args);
+                    return true;
+                }
             }
+        }
 
-            if ($route->matches($path)) {
-                $params = $route->extractParams($path);
-                $this->execute($route->action, $params, $args);
+        // Level 3: Fall back to method-based filtering for routes without specific prefix
+        if (isset($this->method_index[$method])) {
+            foreach ($this->method_index[$method] as $route) {
+                //  Skip if already checked via prefix
+                if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
+                    continue;
+                }
 
-                return true;
+                $params = [];
+                if ($route->matchAndExtract($path, $params)) {
+                    $this->execute($route->action, $params, $args);
+                    return true;
+                }
             }
         }
 
         if ($this->not_found_handler !== null) {
             $this->execute($this->not_found_handler, [], $args);
-
             return true;
         }
 
@@ -222,6 +254,8 @@ class Routes
     /**
      * Find a matching route for method and URI.
      *
+     * Uses same triple-level optimization as dispatch().
+     *
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
@@ -237,17 +271,35 @@ class Routes
     public function matchRoute(string $method, string $uri): ?HttpRoute
     {
         $path = $this->stripQueryString($uri);
-        $this->buildStaticIndex();
-
         $key = $method.':'.$path;
 
+        // Level 1: Static route lookup
         if (isset($this->static_index[$key])) {
             return $this->static_index[$key];
         }
 
-        foreach ($this->routes as $route) {
-            if ($route->method === $method && $route->matches($path)) {
-                return $route;
+        // Level 2: Prefix-based lookup
+        $prefix = $this->extractPrefix($path);
+        $prefix_key = $method.':'.$prefix;
+
+        if (isset($this->prefix_index[$prefix_key])) {
+            foreach ($this->prefix_index[$prefix_key] as $route) {
+                if ($route->matches($path)) {
+                    return $route;
+                }
+            }
+        }
+
+        // Level 3: Method-based fallback
+        if (isset($this->method_index[$method])) {
+            foreach ($this->method_index[$method] as $route) {
+                if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
+                    continue;
+                }
+
+                if ($route->matches($path)) {
+                    return $route;
+                }
             }
         }
 
@@ -388,7 +440,10 @@ class Routes
     }
 
     /**
-     * Store a route and update indices.
+     * Store a route and update all indices immediately.
+     *
+     * Performance optimization: Build indices during registration
+     * rather than lazily during dispatch.
      *
      * @param  HttpRoute  $route  Route to store
      */
@@ -396,7 +451,28 @@ class Routes
     {
         $this->routes[] = $route;
         $this->pattern_index[$route->method.':'.$route->pattern] = $route;
-        $this->static_index = null;
+
+        // Build static index for routes without parameters (O(1) lookup)
+        if (empty($route->params)) {
+            $this->static_index[$route->method.':'.$route->pattern] = $route;
+        } else {
+            // Build method index for dynamic routes (group by HTTP method)
+            if (!isset($this->method_index[$route->method])) {
+                $this->method_index[$route->method] = [];
+            }
+            $this->method_index[$route->method][] = $route;
+
+            // Build prefix index for faster dynamic route matching
+            // Extract static prefix (everything before first parameter)
+            $prefix = $this->extractPrefix($route->pattern);
+            if ($prefix !== '/') {
+                $prefix_key = $route->method.':'.$prefix;
+                if (!isset($this->prefix_index[$prefix_key])) {
+                    $this->prefix_index[$prefix_key] = [];
+                }
+                $this->prefix_index[$prefix_key][] = $route;
+            }
+        }
     }
 
     /**
@@ -430,6 +506,49 @@ class Routes
         $path = strtok($uri, '?');
 
         return $path !== false ? $path : '';
+    }
+
+    /**
+     * Extract static prefix from a route pattern or path.
+     *
+     * Returns everything before the first parameter placeholder (normalized without trailing slash).
+     * Examples:
+     * - /users/{id}/posts -> /users
+     * - /api/v1/{resource} -> /api/v1
+     * - /users -> /users
+     * - /{id} -> / (root has no prefix)
+     *
+     * @param  string  $pattern  Route pattern or path
+     *
+     * @return string  Static prefix (no trailing slash except for root)
+     */
+    private function extractPrefix(string $pattern): string
+    {
+        $pos = strpos($pattern, '{');
+
+        if ($pos === false) {
+            // No parameters - return path up to last segment
+            $last_slash = strrpos($pattern, '/');
+            if ($last_slash === false || $last_slash === 0) {
+                return '/';
+            }
+            return substr($pattern, 0, $last_slash);
+        }
+
+        if ($pos === 0 || $pos === 1) {
+            return '/';
+        }
+
+        // Find the last slash before the first parameter
+        $prefix = substr($pattern, 0, $pos);
+        $last_slash = strrpos($prefix, '/');
+
+        if ($last_slash === false) {
+            return '/';
+        }
+
+        $result = substr($prefix, 0, $last_slash);
+        return $result === '' ? '/' : $result;
     }
 
     /**

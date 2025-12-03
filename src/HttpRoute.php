@@ -127,6 +127,38 @@ class HttpRoute
     }
 
     /**
+     * Match and extract parameters in one regex call.
+     *
+     * Performance optimization: Combines matches() and extractParams()
+     * to avoid calling preg_match twice.
+     *
+     * @param  string  $uri  The URI to match against
+     * @param  array   $params  Output parameter for extracted values
+     *
+     * @return bool  True if route matches
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function matchAndExtract(string $uri, &$params): bool
+    {
+        if (!preg_match($this->regex, $uri, $matches)) {
+            return false;
+        }
+
+        $captured_values = array_slice($matches, 1);
+        $params = [];
+
+        foreach ($this->params as $index => $param_name) {
+            $value = $captured_values[$index] ?? '';
+
+            if ($value !== '' || !in_array($param_name, $this->optional_params, true)) {
+                $params[$param_name] = $value;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Create a new route with an additional constraint.
      *
      * @param  string|array  $param    Parameter name or array of constraints
