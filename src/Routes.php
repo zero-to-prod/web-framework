@@ -661,12 +661,41 @@ class Routes
             return;
         }
 
-        $final_action = function () use ($action, $params, $args) {
+        $pipeline = function () use ($action, $params, $args) {
             $this->execute($action, $params, $args);
         };
 
-        $pipeline = new MiddlewarePipeline($middleware);
-        $pipeline->execute($final_action);
+        foreach (array_reverse($middleware) as $mw) {
+            $next = $pipeline;
+            $pipeline = function () use ($mw, $next) {
+                $this->resolveMiddleware($mw)($_SERVER, $next);
+            };
+        }
+
+        $pipeline();
+    }
+
+    /**
+     * Resolve middleware to a callable.
+     *
+     * @param  mixed  $middleware  Middleware callable or class name
+     *
+     * @return callable
+     * @throws InvalidArgumentException  If middleware cannot be resolved
+     */
+    private function resolveMiddleware($middleware): callable
+    {
+        if ($middleware instanceof \Closure || is_callable($middleware)) {
+            return $middleware;
+        }
+
+        if (is_string($middleware) && class_exists($middleware)) {
+            return new $middleware();
+        }
+
+        throw new InvalidArgumentException(
+            'Middleware must be a callable, closure, or invokable class name'
+        );
     }
 
 }
