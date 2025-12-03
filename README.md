@@ -568,7 +568,7 @@ $routes->dispatch('GET', '/invalid', $logger);
 
 Middleware provides a convenient mechanism for inspecting and filtering HTTP requests entering your routes. Middleware executes before route actions, making it perfect for authentication, logging, CORS, rate limiting, and more.
 
-The middleware signature follows Laravel's pattern, receiving the `$_SERVER` superglobal and a `$next` callable.
+Middleware receives a `$next` callable followed by any arguments passed to `dispatch()`, allowing you to pass custom context objects, dependencies, or the `$_SERVER` superglobal.
 
 ##### Quick Start
 
@@ -576,7 +576,7 @@ The middleware signature follows Laravel's pattern, receiving the `$_SERVER` sup
 use Zerotoprod\WebFramework\Routes;
 
 $routes = Routes::collect()
-    ->middleware(function ($server, $next) {
+    ->middleware(function ($next, $server) {
         // Pre-action logic
         error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
 
@@ -588,7 +588,8 @@ $routes = Routes::collect()
     })
     ->get('/users', [UserController::class, 'index']);
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+// Pass $_SERVER as first argument to dispatch
+$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER);
 ```
 
 ##### Middleware Signature
@@ -596,18 +597,26 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 All middleware must be callable with this signature:
 
 ```php
-function ($server, $next) {
-    // $server is the unmodified $_SERVER superglobal
+function ($next, ...$context) {
     // $next is a closure to continue the middleware chain
+    // $context contains all arguments passed to dispatch()
 }
 ```
 
-**Access to context:**
-- `$server['REQUEST_METHOD']` - HTTP method (GET, POST, etc.)
-- `$server['REQUEST_URI']` - Request URI
-- `$server['REMOTE_ADDR']` - Client IP address
-- `$server['HTTP_*']` - All HTTP headers
-- All other standard `$_SERVER` variables
+**More explicitly**:
+```php
+function ($next, $server, $db = null, $logger = null) {
+    // Middleware declares exactly what it expects
+    // $server would be first arg from dispatch()
+    // $db would be second arg (optional)
+    // $logger would be third arg (optional)
+}
+```
+
+**Access to dispatch arguments:**
+- First arg is typically `$_SERVER` (by convention)
+- Additional args can be any dependencies (database, logger, etc.)
+- Middleware declares what it needs via function parameters
 
 ##### Global Middleware
 
@@ -659,7 +668,7 @@ $routes->get('/profile/{id}', [ProfileController::class, 'show'])
 ```php
 class AuthenticationMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         // Pre-action: Check authentication
         if (!isset($_SESSION['user_id'])) {
@@ -675,12 +684,15 @@ class AuthenticationMiddleware
         error_log("Request completed by user: {$_SESSION['user_id']}");
     }
 }
+
+// Usage
+$routes->dispatch('GET', '/admin', $_SERVER);
 ```
 
 **Closure Middleware:**
 
 ```php
-$routes->middleware(function ($server, $next) {
+$routes->middleware(function ($next, $server) {
     $start = microtime(true);
 
     // Continue to action
@@ -690,6 +702,8 @@ $routes->middleware(function ($server, $next) {
     $duration = microtime(true) - $start;
     error_log("{$server['REQUEST_METHOD']} {$server['REQUEST_URI']} - {$duration}s");
 });
+
+$routes->dispatch('GET', '/users', $_SERVER);
 ```
 
 ##### Execution Order
@@ -704,7 +718,7 @@ Middleware executes in this order:
 
 ```php
 $routes = Routes::collect()
-    ->middleware(function ($server, $next) {
+    ->middleware(function ($next) {
         echo "1. Global before\n";
         $next();
         echo "6. Global after\n";
@@ -712,11 +726,13 @@ $routes = Routes::collect()
     ->get('/test', function () {
         echo "4. Action\n";
     })
-    ->middleware(function ($server, $next) {
+    ->middleware(function ($next) {
         echo "2. Route before\n";
         $next();
         echo "5. Route after\n";
     });
+
+$routes->dispatch('GET', '/test');
 
 // Output: 1. Global before → 2. Route before → 4. Action → 5. Route after → 6. Global after
 ```
@@ -728,7 +744,7 @@ Middleware can stop request processing by not calling `$next()`:
 ```php
 class RateLimitMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         $ip = $server['REMOTE_ADDR'] ?? 'unknown';
 
@@ -741,6 +757,8 @@ class RateLimitMiddleware
         $next(); // Continue processing
     }
 }
+
+$routes->dispatch('GET', '/api/resource', $_SERVER);
 ```
 
 ##### Practical Examples
@@ -750,7 +768,7 @@ class RateLimitMiddleware
 ```php
 class AuthMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         if (empty($_SESSION['user_id'])) {
             http_response_code(401);
@@ -760,6 +778,8 @@ class AuthMiddleware
         $next();
     }
 }
+
+$routes->dispatch('GET', '/admin', $_SERVER);
 ```
 
 **CORS:**
@@ -767,7 +787,7 @@ class AuthMiddleware
 ```php
 class CorsMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         // Continue to action first
         $next();
@@ -781,6 +801,8 @@ class CorsMiddleware
         }
     }
 }
+
+$routes->dispatch('GET', '/api/resource', $_SERVER);
 ```
 
 **Logging:**
@@ -788,7 +810,7 @@ class CorsMiddleware
 ```php
 class LoggingMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         $method = $server['REQUEST_METHOD'] ?? 'UNKNOWN';
         $uri = $server['REQUEST_URI'] ?? '/';
@@ -802,6 +824,30 @@ class LoggingMiddleware
         error_log("$method $uri from $ip - {$duration}s");
     }
 }
+
+$routes->dispatch('GET', '/users', $_SERVER);
+```
+
+**With Multiple Dependencies:**
+
+```php
+class UserMiddleware
+{
+    public function __invoke($next, $server, $db, $logger)
+    {
+        // Access all dependencies passed to dispatch
+        $logger->info("Request from: {$server['REMOTE_ADDR']}");
+
+        $next();
+
+        $logger->info("Request completed");
+    }
+}
+
+$database = new Database();
+$logger = new Logger();
+
+$routes->dispatch('GET', '/users', $_SERVER, $database, $logger);
 ```
 
 ##### Complete Example
@@ -812,7 +858,7 @@ use Zerotoprod\WebFramework\Routes;
 // Create middleware classes
 class AuthMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         if (!isset($_SESSION['authenticated'])) {
             http_response_code(401);
@@ -825,7 +871,7 @@ class AuthMiddleware
 
 class LogMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
         $next();
@@ -834,7 +880,7 @@ class LogMiddleware
 
 class AdminMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next, $server)
     {
         if ($_SESSION['role'] !== 'admin') {
             http_response_code(403);
@@ -871,8 +917,8 @@ $routes = Routes::collect()
         echo json_encode(['error' => 'Not Found']);
     });
 
-// Dispatch
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+// Dispatch with $_SERVER
+$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER);
 ```
 
 ##### Middleware and Caching
@@ -923,7 +969,8 @@ $compiled = file_get_contents('cache/routes.cache');
 $routes = Routes::collect()->loadCompiled($compiled);
 
 // Both global and per-route middleware are restored
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+// Pass $_SERVER and any dependencies to dispatch
+$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER);
 ```
 
 #### Route Caching

@@ -14,7 +14,7 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global_before';
                 $next();
                 $execution_order[] = 'global_after';
@@ -34,14 +34,14 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global';
                 $next();
             })
             ->get('/test', function () use (&$execution_order) {
                 $execution_order[] = 'action';
             })
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'route';
                 $next();
             });
@@ -52,26 +52,27 @@ class MiddlewareTest extends TestCase
     }
 
     /** @test */
-    public function middleware_receives_unmodified_server_array(): void
+    public function middleware_receives_dispatch_args(): void
     {
-        $received_server = null;
+        $received_args = null;
 
-        $_SERVER['TEST_KEY'] = 'test_value';
-        $_SERVER['REQUEST_METHOD'] = 'GET';
-        $_SERVER['REQUEST_URI'] = '/test';
+        $server = ['REQUEST_METHOD' => 'GET', 'TEST_KEY' => 'test_value'];
+        $db = new \stdClass();
+        $db->name = 'database';
 
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) use (&$received_server) {
-                $received_server = $server;
+            ->middleware(function ($next, ...$context) use (&$received_args) {
+                $received_args = $context;
                 $next();
             })
             ->get('/test', function () {});
 
-        $routes->dispatch('GET', '/test');
+        $routes->dispatch('GET', '/test', $server, $db);
 
-        $this->assertIsArray($received_server);
-        $this->assertEquals('test_value', $received_server['TEST_KEY'] ?? null);
-        $this->assertEquals('GET', $received_server['REQUEST_METHOD'] ?? null);
+        $this->assertIsArray($received_args);
+        $this->assertCount(2, $received_args);
+        $this->assertEquals('test_value', $received_args[0]['TEST_KEY']);
+        $this->assertEquals('database', $received_args[1]->name);
     }
 
     /** @test */
@@ -80,7 +81,7 @@ class MiddlewareTest extends TestCase
         $action_executed = false;
 
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) {
+            ->middleware(function ($next) {
                 echo 'Halted';
             })
             ->get('/test', function () use (&$action_executed) {
@@ -99,15 +100,15 @@ class MiddlewareTest extends TestCase
 
         $routes = Routes::collect()
             ->middleware([
-                function ($server, $next) use (&$execution_order) {
+                function ($next) use (&$execution_order) {
                     $execution_order[] = 'middleware1';
                     $next();
                 },
-                function ($server, $next) use (&$execution_order) {
+                function ($next) use (&$execution_order) {
                     $execution_order[] = 'middleware2';
                     $next();
                 },
-                function ($server, $next) use (&$execution_order) {
+                function ($next) use (&$execution_order) {
                     $execution_order[] = 'middleware3';
                     $next();
                 },
@@ -139,7 +140,7 @@ class MiddlewareTest extends TestCase
     public function routes_with_closure_middleware_are_not_cacheable(): void
     {
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) {
+            ->middleware(function ($next) {
                 $next();
             })
             ->get('/test', [MiddlewareTestController::class, 'method']);
@@ -182,7 +183,7 @@ class MiddlewareTest extends TestCase
 
         $routes = Routes::collect()
             ->get('/test', function () {})
-            ->middleware(function ($server, $next) use (&$middleware_executed) {
+            ->middleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
                 $next();
             });
@@ -199,7 +200,7 @@ class MiddlewareTest extends TestCase
         $fallback_executed = false;
 
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) use (&$middleware_executed) {
+            ->middleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
                 $next();
             })
@@ -220,22 +221,22 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Routes::collect()
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global1';
                 $next();
             })
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global2';
                 $next();
             })
             ->get('/test', function () use (&$execution_order) {
                 $execution_order[] = 'action';
             })
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'route1';
                 $next();
             })
-            ->middleware(function ($server, $next) use (&$execution_order) {
+            ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'route2';
                 $next();
             });
@@ -265,7 +266,7 @@ class TestInvokableMiddleware
 {
     public static $executed = false;
 
-    public function __invoke($server, $next)
+    public function __invoke($next)
     {
         self::$executed = true;
         $next();
@@ -274,7 +275,7 @@ class TestInvokableMiddleware
 
 class AnotherMiddleware
 {
-    public function __invoke($server, $next)
+    public function __invoke($next)
     {
         $next();
     }

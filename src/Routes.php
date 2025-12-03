@@ -499,25 +499,6 @@ class Routes
     }
 
     /**
-     * Build static route index for O(1) lookups.
-     */
-    private function buildStaticIndex(): void
-    {
-        if ($this->static_index !== null) {
-            return;
-        }
-
-        $this->static_index = [];
-
-        foreach ($this->routes as $route) {
-            if (empty($route->params)) {
-                $key = $route->method.':'.$route->pattern;
-                $this->static_index[$key] = $route;
-            }
-        }
-    }
-
-    /**
      * Strip query string from URI.
      *
      * @param  string  $uri  Request URI
@@ -648,8 +629,8 @@ class Routes
 
         foreach (array_reverse($middleware) as $mw) {
             $next = $pipeline;
-            $pipeline = function () use ($mw, $next) {
-                (is_string($mw) ? new $mw() : $mw)($_SERVER, $next);
+            $pipeline = function () use ($mw, $next, $args) {
+                (is_string($mw) ? new $mw() : $mw)($next, ...$args);
             };
         }
 
