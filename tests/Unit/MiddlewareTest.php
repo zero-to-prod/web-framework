@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use Tests\TestCase;
 use Zerotoprod\WebFramework\HttpRoute;
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 class MiddlewareTest extends TestCase
 {
@@ -13,7 +13,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global_before';
                 $next();
@@ -33,7 +33,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global';
                 $next();
@@ -60,7 +60,7 @@ class MiddlewareTest extends TestCase
         $db = new \stdClass();
         $db->name = 'database';
 
-        $routes = Routes::collect('GET', '/test', $server, $db)
+        $routes = Router::for('GET', '/test', $server, $db)
             ->middleware(function ($next, ...$context) use (&$received_args) {
                 $received_args = $context;
                 $next();
@@ -80,7 +80,7 @@ class MiddlewareTest extends TestCase
     {
         $action_executed = false;
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->middleware(function ($next) {
                 echo 'Halted';
             })
@@ -98,7 +98,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->middleware([
                 function ($next) use (&$execution_order) {
                     $execution_order[] = 'middleware1';
@@ -127,7 +127,7 @@ class MiddlewareTest extends TestCase
     {
         TestInvokableMiddleware::$executed = false;
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->get('/test', function () {})
             ->middleware(TestInvokableMiddleware::class);
 
@@ -139,7 +139,7 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function routes_with_closure_middleware_are_not_cacheable(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->middleware(function ($next) {
                 $next();
             })
@@ -151,7 +151,7 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function routes_with_class_middleware_are_cacheable(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->middleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method']);
 
@@ -161,14 +161,14 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function can_compile_and_load_routes_with_middleware(): void
     {
-        $routes1 = Routes::collect('', '')
+        $routes1 = Router::for('', '')
             ->middleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method'])
                 ->middleware(AnotherMiddleware::class);
 
         $compiled = $routes1->compile();
 
-        $routes2 = Routes::collect('', '')->loadCompiled($compiled);
+        $routes2 = Router::for('', '')->loadCompiled($compiled);
 
         $matched_route = $routes2->matchRoute('GET', '/test');
         $this->assertNotNull($matched_route);
@@ -181,7 +181,7 @@ class MiddlewareTest extends TestCase
     {
         $middleware_executed = false;
 
-        $routes = Routes::collect('GET', '/other')
+        $routes = Router::for('GET', '/other')
             ->get('/test', function () {})
             ->middleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
@@ -199,7 +199,7 @@ class MiddlewareTest extends TestCase
         $middleware_executed = false;
         $fallback_executed = false;
 
-        $routes = Routes::collect('GET', '/non-existent')
+        $routes = Router::for('GET', '/non-existent')
             ->middleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
                 $next();
@@ -220,7 +220,7 @@ class MiddlewareTest extends TestCase
     {
         $execution_order = [];
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->middleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global1';
                 $next();
@@ -251,7 +251,7 @@ class MiddlewareTest extends TestCase
     {
         $action_executed = false;
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->get('/test', function () use (&$action_executed) {
                 $action_executed = true;
             });

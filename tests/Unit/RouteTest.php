@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use InvalidArgumentException;
 use Tests\TestCase;
 use Zerotoprod\WebFramework\HttpRoute;
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 class RouteTest extends TestCase
 {
@@ -15,7 +15,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/users')
+        $routes = Router::for('GET', '/users')
             ->get('/users', function (array $params) use (&$executed) {
                 $executed = true;
             });
@@ -30,7 +30,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users')
+        $routes = Router::for('GET', '/users')
             ->get('/users', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -45,7 +45,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/123')
+        $routes = Router::for('GET', '/users/123')
             ->get('/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -60,7 +60,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/123')
+        $routes = Router::for('GET', '/users/123')
             ->get('/users/{id:\d+}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -75,7 +75,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/users/abc')
+        $routes = Router::for('GET', '/users/abc')
             ->get('/users/{id:\d+}', function () use (&$executed) {
                 $executed = true;
             });
@@ -90,7 +90,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/456')
+        $routes = Router::for('GET', '/users/456')
             ->get('/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -106,7 +106,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/users/abc')
+        $routes = Router::for('GET', '/users/abc')
             ->get('/users/{id}', function () use (&$executed) {
                 $executed = true;
             })
@@ -122,7 +122,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users')
+        $routes = Router::for('GET', '/users')
             ->get('/users/{id?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -137,7 +137,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/789')
+        $routes = Router::for('GET', '/users/789')
             ->get('/users/{id?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -150,7 +150,7 @@ class RouteTest extends TestCase
     /** @test */
     public function match_route_returns_route_object(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             });
 
@@ -164,7 +164,7 @@ class RouteTest extends TestCase
     /** @test */
     public function match_route_returns_null_when_no_match(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             });
 
@@ -176,7 +176,7 @@ class RouteTest extends TestCase
     /** @test */
     public function get_routes_returns_all_registered_routes(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users', function () {
             })
             ->get('/posts/{id}', function () {
@@ -192,7 +192,7 @@ class RouteTest extends TestCase
     /** @test */
     public function has_route_returns_true_for_existing_route(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             });
 
@@ -202,7 +202,7 @@ class RouteTest extends TestCase
     /** @test */
     public function has_route_returns_false_for_non_existing_route(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             });
 
@@ -215,7 +215,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Action cannot be null');
 
-        Routes::collect('', '')->get('/users', null);
+        Router::for('', '')->get('/users', null);
     }
 
     /** @test */
@@ -223,7 +223,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('POST', '/users/456')
+        $routes = Router::for('POST', '/users/456')
             ->post('/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -238,7 +238,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('PUT', '/users/789')
+        $routes = Router::for('PUT', '/users/789')
             ->put('/users/{id}', function () use (&$executed) {
                 $executed = true;
             });
@@ -253,7 +253,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('PATCH', '/users/111')
+        $routes = Router::for('PATCH', '/users/111')
             ->patch('/users/{id}', function () use (&$executed) {
                 $executed = true;
             });
@@ -268,7 +268,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('DELETE', '/users/222')
+        $routes = Router::for('DELETE', '/users/222')
             ->delete('/users/{id}', function () use (&$executed) {
                 $executed = true;
             });
@@ -283,7 +283,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('OPTIONS', '/users/333')
+        $routes = Router::for('OPTIONS', '/users/333')
             ->options('/users/{id}', function () use (&$executed) {
                 $executed = true;
             });
@@ -298,7 +298,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('HEAD', '/users/444')
+        $routes = Router::for('HEAD', '/users/444')
             ->head('/users/{id}', function () use (&$executed) {
                 $executed = true;
             });
@@ -313,7 +313,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/42/posts/99')
+        $routes = Router::for('GET', '/users/42/posts/99')
             ->get('/users/{userId}/posts/{postId}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -328,7 +328,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/123/posts/my-post')
+        $routes = Router::for('GET', '/users/123/posts/my-post')
             ->get('/users/{id}/posts/{slug}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -344,7 +344,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users')
+        $routes = Router::for('GET', '/users')
             ->get('/users/{id:\d+?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -359,7 +359,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/555')
+        $routes = Router::for('GET', '/users/555')
             ->get('/users/{id:\d+?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -374,7 +374,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/search/test')
+        $routes = Router::for('GET', '/search/test')
             ->get('/search/{query?}/{category?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -389,7 +389,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/123/posts')
+        $routes = Router::for('GET', '/users/123/posts')
             ->get('/users/{id}/posts/{slug?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -404,7 +404,7 @@ class RouteTest extends TestCase
     {
         $fallback_executed = false;
 
-        $routes = Routes::collect('GET', '/nonexistent')
+        $routes = Router::for('GET', '/nonexistent')
             ->get('/users', function () {
             })
             ->fallback(function () use (&$fallback_executed) {
@@ -421,7 +421,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/anything')
+        $routes = Router::for('GET', '/anything')
             ->fallback(function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -434,7 +434,7 @@ class RouteTest extends TestCase
     /** @test */
     public function route_name_can_be_set(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             })
             ->name('user.show');
@@ -447,7 +447,7 @@ class RouteTest extends TestCase
     /** @test */
     public function controller_array_syntax_works(): void
     {
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->get('/test', [TestController::class, 'handle']);
 
         TestController::$executed = false;
@@ -459,7 +459,7 @@ class RouteTest extends TestCase
     /** @test */
     public function controller_receives_params_array(): void
     {
-        $routes = Routes::collect('GET', '/users/999')
+        $routes = Router::for('GET', '/users/999')
             ->get('/users/{id}', [TestController::class, 'showWithParams']);
 
         TestController::$received_params = null;
@@ -471,7 +471,7 @@ class RouteTest extends TestCase
     /** @test */
     public function invokeable_controller_works(): void
     {
-        $routes = Routes::collect('GET', '/invoke')
+        $routes = Router::for('GET', '/invoke')
             ->get('/invoke', InvokeableTestController::class);
 
         InvokeableTestController::$invoked = false;
@@ -483,7 +483,7 @@ class RouteTest extends TestCase
     /** @test */
     public function string_action_echoes_output(): void
     {
-        $routes = Routes::collect('GET', '/hello')
+        $routes = Router::for('GET', '/hello')
             ->get('/hello', 'Hello World');
 
         ob_start();
@@ -498,7 +498,7 @@ class RouteTest extends TestCase
     {
         $received_args = [];
 
-        $routes = Routes::collect('GET', '/test', 'arg1', 'arg2')
+        $routes = Router::for('GET', '/test', 'arg1', 'arg2')
             ->get('/test', function (array $params, ...$args) use (&$received_args) {
                 $received_args = $args;
             });
@@ -513,7 +513,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/search?q=test&page=1')
+        $routes = Router::for('GET', '/search?q=test&page=1')
             ->get('/search', function () use (&$executed) {
                 $executed = true;
             });
@@ -529,7 +529,7 @@ class RouteTest extends TestCase
         $static_executed = false;
         $dynamic_executed = false;
 
-        $routes = Routes::collect('GET', '/users/create')
+        $routes = Router::for('GET', '/users/create')
             ->get('/users/create', function () use (&$static_executed) {
                 $static_executed = true;
             })
@@ -546,13 +546,13 @@ class RouteTest extends TestCase
     /** @test */
     public function compile_and_load_cacheable_routes(): void
     {
-        $routes1 = Routes::collect('', '')
+        $routes1 = Router::for('', '')
             ->get('/users/{id}', [TestController::class, 'handle'])
             ->where('id', '\d+');
 
         $compiled = $routes1->compile();
 
-        $routes2 = Routes::collect('GET', '/users/123')->loadCompiled($compiled);
+        $routes2 = Router::for('GET', '/users/123')->loadCompiled($compiled);
 
         TestController::$executed = false;
         $routes2->dispatch();
@@ -566,7 +566,7 @@ class RouteTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('closures');
 
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/test', function () {
             });
 
@@ -576,7 +576,7 @@ class RouteTest extends TestCase
     /** @test */
     public function is_cacheable_returns_false_for_closures(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/test', function () {
             });
 
@@ -586,7 +586,7 @@ class RouteTest extends TestCase
     /** @test */
     public function is_cacheable_returns_true_for_controller_arrays(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/test', [TestController::class, 'handle']);
 
         $this->assertTrue($routes->isCacheable());
@@ -597,7 +597,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('POST', '/users')
+        $routes = Router::for('POST', '/users')
             ->get('/users', function () use (&$executed) {
                 $executed = true;
             });
@@ -612,7 +612,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/posts')
+        $routes = Router::for('GET', '/posts')
             ->get('/users', function () use (&$executed) {
                 $executed = true;
             });
@@ -627,7 +627,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/users/123')
+        $routes = Router::for('GET', '/users/123')
             ->get('/users/{id}', function () use (&$executed) {
                 $executed = true;
             })
@@ -643,7 +643,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/search/foo/bar/baz')
+        $routes = Router::for('GET', '/search/foo/bar/baz')
             ->get('/search/{query}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -660,7 +660,7 @@ class RouteTest extends TestCase
         $first_executed = false;
         $second_executed = false;
 
-        $routes = Routes::collect('GET', '/posts')
+        $routes = Router::for('GET', '/posts')
             ->get('/users', function () use (&$first_executed) {
                 $first_executed = true;
             })
@@ -677,7 +677,7 @@ class RouteTest extends TestCase
     /** @test */
     public function method_chaining_works(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users', function () {
             })
             ->post('/users', function () {
@@ -696,7 +696,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users')
+        $routes = Router::for('GET', '/users')
             ->get('/{lang?}/users', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -711,7 +711,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/en/users')
+        $routes = Router::for('GET', '/en/users')
             ->get('/{lang?}/users', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -726,7 +726,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/api/users/123')
+        $routes = Router::for('GET', '/api/users/123')
             ->get('/api/{version?}/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -741,7 +741,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/api/v1/users/123')
+        $routes = Router::for('GET', '/api/v1/users/123')
             ->get('/api/{version?}/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -756,7 +756,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/search')
+        $routes = Router::for('GET', '/search')
             ->get('/search/{query?}/{filter?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -771,7 +771,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/123/posts/my-post-123')
+        $routes = Router::for('GET', '/users/123/posts/my-post-123')
             ->get('/users/{id:\d+}/posts/{slug}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -787,7 +787,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/users/abc')
+        $routes = Router::for('GET', '/users/abc')
             ->get('/users/{id:\d+}', function () use (&$executed) {
                 $executed = true;
             })
@@ -804,7 +804,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid regex pattern');
 
-        Routes::collect('', '')
+        Router::for('', '')
             ->get('/users/{id}', function () {
             })
             ->where('id', '(?P<invalid>');
@@ -813,7 +813,7 @@ class RouteTest extends TestCase
     /** @test */
     public function dispatch_returns_false_when_no_match_and_no_fallback(): void
     {
-        $routes = Routes::collect('GET', '/posts')
+        $routes = Router::for('GET', '/posts')
             ->get('/users', function () {
             });
 
@@ -825,7 +825,7 @@ class RouteTest extends TestCase
     /** @test */
     public function dispatch_returns_true_when_route_matches(): void
     {
-        $routes = Routes::collect('GET', '/users')
+        $routes = Router::for('GET', '/users')
             ->get('/users', function () {
             });
 
@@ -837,7 +837,7 @@ class RouteTest extends TestCase
     /** @test */
     public function dispatch_returns_true_when_fallback_executes(): void
     {
-        $routes = Routes::collect('GET', '/anything')
+        $routes = Router::for('GET', '/anything')
             ->fallback(function () {
             });
 
@@ -849,7 +849,7 @@ class RouteTest extends TestCase
     /** @test */
     public function route_extract_params_method_works(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             });
 
@@ -862,7 +862,7 @@ class RouteTest extends TestCase
     /** @test */
     public function route_matches_method_works(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             });
 
@@ -875,7 +875,7 @@ class RouteTest extends TestCase
     /** @test */
     public function get_routes_returns_empty_array_for_new_collection(): void
     {
-        $routes = Routes::collect('', '');
+        $routes = Router::for('', '');
 
         $this->assertEquals([], $routes->getRoutes());
     }
@@ -883,7 +883,7 @@ class RouteTest extends TestCase
     /** @test */
     public function has_route_checks_method_and_pattern(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users/{id}', function () {
             })
             ->post('/users/{id}', function () {
@@ -899,7 +899,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/550e8400-e29b-41d4-a716-446655440000')
+        $routes = Router::for('GET', '/users/550e8400-e29b-41d4-a716-446655440000')
             ->get('/users/{uuid}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -915,7 +915,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/550e8400-e29b-41d4-a716-446655440000')
+        $routes = Router::for('GET', '/users/550e8400-e29b-41d4-a716-446655440000')
             ->get('/users/{uuid}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -931,7 +931,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/posts/my-blog-post-123')
+        $routes = Router::for('GET', '/posts/my-blog-post-123')
             ->get('/posts/{slug}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -946,7 +946,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/api/v1/users/42/posts/99')
+        $routes = Router::for('GET', '/api/v1/users/42/posts/99')
             ->get('/api/{version}/users/{id}/posts/{postId}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -959,7 +959,7 @@ class RouteTest extends TestCase
     /** @test */
     public function match_route_returns_static_route(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/static', function () {
             });
 
@@ -972,7 +972,7 @@ class RouteTest extends TestCase
     /** @test */
     public function different_methods_same_pattern_are_different_routes(): void
     {
-        $routes = Routes::collect('', '')
+        $routes = Router::for('', '')
             ->get('/users', function () {
             })
             ->post('/users', function () {
@@ -993,7 +993,7 @@ class RouteTest extends TestCase
         $first_executed = false;
         $second_executed = false;
 
-        $routes = Routes::collect('GET', '/items/test')
+        $routes = Router::for('GET', '/items/test')
             ->get('/items/{id}', function () use (&$first_executed) {
                 $first_executed = true;
             })
@@ -1012,7 +1012,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/777')
+        $routes = Router::for('GET', '/users/777')
             ->get('/users/{id?}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -1028,7 +1028,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/users/abc')
+        $routes = Router::for('GET', '/users/abc')
             ->get('/users/{id?}', function () use (&$executed) {
                 $executed = true;
             })
@@ -1044,7 +1044,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/')
+        $routes = Router::for('GET', '/')
             ->get('/', function () use (&$executed) {
                 $executed = true;
             });
@@ -1057,12 +1057,12 @@ class RouteTest extends TestCase
     /** @test */
     public function cached_routes_dispatch_correctly(): void
     {
-        $routes1 = Routes::collect('', '')
+        $routes1 = Router::for('', '')
             ->get('/users/{id:\d+}/posts/{slug?}', [TestController::class, 'showWithParams']);
 
         $compiled = $routes1->compile();
 
-        $routes2 = Routes::collect('GET', '/users/42/posts')->loadCompiled($compiled);
+        $routes2 = Router::for('GET', '/users/42/posts')->loadCompiled($compiled);
 
         TestController::$received_params = null;
         $routes2->dispatch();
@@ -1076,13 +1076,13 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Fallback action cannot be null');
 
-        Routes::collect('', '')->fallback(null);
+        Router::for('', '')->fallback(null);
     }
 
     /** @test */
     public function fallback_returns_self_for_chaining(): void
     {
-        $routes = Routes::collect('', '');
+        $routes = Router::for('', '');
 
         $result = $routes->fallback(function () {
         });
@@ -1093,7 +1093,7 @@ class RouteTest extends TestCase
     /** @test */
     public function finalize_route_stores_route_in_collection(): void
     {
-        $routes = Routes::collect('', '');
+        $routes = Router::for('', '');
 
         $route = new HttpRoute(
             'GET',
@@ -1119,11 +1119,11 @@ class RouteTest extends TestCase
      */
     public function execute_method_is_private_and_not_part_of_public_api(): void
     {
-        $routes = Routes::collect('', '');
+        $routes = Router::for('', '');
 
         // Verify execute() is not accessible from outside
         $this->assertFalse(
-            (new \ReflectionMethod(Routes::class, 'execute'))->isPublic(),
+            (new \ReflectionMethod(Router::class, 'execute'))->isPublic(),
             'execute() should be private'
         );
     }
@@ -1134,7 +1134,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Controller array must have exactly 2 elements');
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->get('/test', []);
 
         $routes->dispatch();
@@ -1146,7 +1146,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Controller array must have exactly 2 elements');
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->get('/test', [TestController::class]);
 
         $routes->dispatch();
@@ -1158,7 +1158,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Controller array must have exactly 2 elements');
 
-        $routes = Routes::collect('GET', '/test')
+        $routes = Router::for('GET', '/test')
             ->get('/test', [TestController::class, 'handle', 'extra']);
 
         $routes->dispatch();
@@ -1167,12 +1167,12 @@ class RouteTest extends TestCase
     /** @test */
     public function load_compiled_returns_self_for_chaining(): void
     {
-        $routes1 = Routes::collect('', '')
+        $routes1 = Router::for('', '')
             ->get('/users', [TestController::class, 'handle']);
 
         $compiled = $routes1->compile();
 
-        $routes2 = Routes::collect('', '');
+        $routes2 = Router::for('', '');
         $result = $routes2->loadCompiled($compiled);
 
         $this->assertSame($routes2, $result);
@@ -1181,7 +1181,7 @@ class RouteTest extends TestCase
     /** @test */
     public function execute_with_controller_array_passes_additional_args(): void
     {
-        $routes = Routes::collect('GET', '/test', 'arg1', 'arg2', 'arg3')
+        $routes = Router::for('GET', '/test', 'arg1', 'arg2', 'arg3')
             ->get('/test', [TestControllerWithArgs::class, 'handleWithArgs']);
 
         TestControllerWithArgs::$received_args = [];
@@ -1193,7 +1193,7 @@ class RouteTest extends TestCase
     /** @test */
     public function execute_with_invokable_controller_passes_additional_args(): void
     {
-        $routes = Routes::collect('GET', '/test', 'foo', 'bar')
+        $routes = Router::for('GET', '/test', 'foo', 'bar')
             ->get('/test', InvokeableControllerWithArgs::class);
 
         InvokeableControllerWithArgs::$received_args = [];
@@ -1207,7 +1207,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/about')
+        $routes = Router::for('GET', '/about')
             ->get('about', function () use (&$executed) {
                 $executed = true;
             });
@@ -1222,7 +1222,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Routes::collect('GET', '/users/123')
+        $routes = Router::for('GET', '/users/123')
             ->get('users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
@@ -1237,7 +1237,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Routes::collect('GET', '/')
+        $routes = Router::for('GET', '/')
             ->get('', function () use (&$executed) {
                 $executed = true;
             });

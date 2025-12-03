@@ -19,7 +19,7 @@ use RuntimeException;
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
-class Routes
+class Router
 {
     /** @var array */
     private $routes = [];
@@ -68,7 +68,7 @@ class Routes
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public static function collect(string $method, string $uri, ...$args): self
+    public static function for(string $method, string $uri, ...$args): self
     {
         return new self($method, $uri, ...$args);
     }

@@ -291,16 +291,16 @@ The routing system provides a fluent, Laravel-style API for defining HTTP routes
 #### Quick Start
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-// Create route collection
-$routes = Routes::collect()
+// Create router for this request with context
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
     ->get('/users', [UserController::class, 'index'])
     ->get('/users/{id}', [UserController::class, 'show'])
     ->post('/users', [UserController::class, 'create']);
 
 // Dispatch request
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 #### Supported HTTP Methods
@@ -489,15 +489,15 @@ Route names are stored in the `HttpRoute` object and can be accessed when needed
 
 #### Additional Arguments (Dependency Injection)
 
-Pass dependencies to all route handlers via the dispatch method:
+Pass dependencies to all route handlers and middleware via Router::for():
 
 ```php
 $database = new Database();
 $logger = new Logger();
 
-// Dependencies passed as additional arguments
-$routes = Route::collect('GET', '/users', $database, $logger)
-    ->get('/users', function ($params, $db, $log) {
+// Dependencies passed as additional arguments to Router::for()
+$routes = Router::for('GET', '/users', $_SERVER, $database, $logger)
+    ->get('/users', function ($params, $server, $db, $log) {
         $log->info('Fetching users');
         $users = $db->query('SELECT * FROM users');
         echo json_encode($users);
@@ -510,13 +510,14 @@ $routes->dispatch();
 
 ```php
 class UserController {
-    public function index($params, $db, $logger) {
+    public function index($params, $server, $db, $logger) {
         $logger->info('UserController::index called');
         return $db->fetchAll('users');
     }
 }
 
-$routes->get('/api/users', [UserController::class, 'index']);
+$routes = Router::for('GET', '/api/users', $_SERVER, $database, $logger)
+    ->get('/api/users', [UserController::class, 'index']);
 
 $routes->dispatch();
 ```
@@ -526,7 +527,7 @@ $routes->dispatch();
 Define a fallback handler for unmatched routes:
 
 ```php
-$routes = Route::collect()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
     ->get('/', 'Home Page')
     ->get('/about', 'About Us')
     ->fallback(function ($params) {
@@ -534,7 +535,7 @@ $routes = Route::collect()
         echo '404 - Page Not Found';
     });
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 **Fallback with controller:**
@@ -547,16 +548,23 @@ class NotFoundController {
     }
 }
 
-$routes->fallback(NotFoundController::class);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
+    ->get('/', 'Home')
+    ->fallback(NotFoundController::class);
+
+$routes->dispatch();
 ```
 
 **Fallback with dependencies:**
 
 ```php
-$routes->fallback(function ($params, $logger) {
-    $logger->warning('404: ' . $_SERVER['REQUEST_URI']);
-    echo '404 - Not Found';
-});
+$logger = new Logger();
+
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER, $logger)
+    ->fallback(function ($params, $server, $log) {
+        $log->warning('404: ' . $server['REQUEST_URI']);
+        echo '404 - Not Found';
+    });
 
 $routes->dispatch();
 ```
@@ -567,14 +575,14 @@ $routes->dispatch();
 
 Middleware provides a convenient mechanism for inspecting and filtering HTTP requests entering your routes. Middleware executes before route actions, making it perfect for authentication, logging, CORS, rate limiting, and more.
 
-Middleware receives a `$next` callable followed by any arguments passed to `dispatch()`, allowing you to pass custom context objects, dependencies, or the `$_SERVER` superglobal.
+Middleware receives a `$next` callable followed by any arguments passed to `Router::for()`, allowing you to pass custom context objects, dependencies, or the `$_SERVER` superglobal.
 
 ##### Quick Start
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
     ->middleware(function ($next, $server) {
         // Pre-action logic
         error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
@@ -587,8 +595,7 @@ $routes = Routes::collect()
     })
     ->get('/users', [UserController::class, 'index']);
 
-// Pass $_SERVER as first argument to dispatch
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER);
+$routes->dispatch();
 ```
 
 ##### Middleware Signature
@@ -598,7 +605,7 @@ All middleware must be callable with this signature:
 ```php
 function ($next, ...$context) {
     // $next is a closure to continue the middleware chain
-    // $context contains all arguments passed to dispatch()
+    // $context contains all arguments passed to Router::for()
 }
 ```
 
@@ -606,13 +613,14 @@ function ($next, ...$context) {
 ```php
 function ($next, $server, $db = null, $logger = null) {
     // Middleware declares exactly what it expects
-    // $server would be first arg from dispatch()
-    // $db would be second arg (optional)
-    // $logger would be third arg (optional)
+    // $server would be first context arg from Router::for()
+    // $db would be second context arg (optional)
+    // $logger would be third context arg (optional)
 }
 ```
 
-**Access to dispatch arguments:**
+**Access to context arguments:**
+- Context args are passed to `Router::for($method, $uri, ...$context)`
 - First arg is typically `$_SERVER` (by convention)
 - Additional args can be any dependencies (database, logger, etc.)
 - Middleware declares what it needs via function parameters
@@ -716,7 +724,7 @@ Middleware executes in this order:
 5. **Global middleware post-processing** (in reverse order)
 
 ```php
-$routes = Routes::collect()
+$routes = Router::for('GET', '/test')
     ->middleware(function ($next) {
         echo "1. Global before\n";
         $next();
@@ -756,8 +764,6 @@ class RateLimitMiddleware
         $next(); // Continue processing
     }
 }
-
-$routes->dispatch();
 ```
 
 ##### Practical Examples
@@ -777,8 +783,6 @@ class AuthMiddleware
         $next();
     }
 }
-
-$routes->dispatch();
 ```
 
 **CORS:**
@@ -800,8 +804,6 @@ class CorsMiddleware
         }
     }
 }
-
-$routes->dispatch();
 ```
 
 **Logging:**
@@ -823,8 +825,6 @@ class LoggingMiddleware
         error_log("$method $uri from $ip - {$duration}s");
     }
 }
-
-$routes->dispatch();
 ```
 
 **With Multiple Dependencies:**
@@ -834,7 +834,7 @@ class UserMiddleware
 {
     public function __invoke($next, $server, $db, $logger)
     {
-        // Access all dependencies passed to dispatch
+        // Access all dependencies passed to Router::for()
         $logger->info("Request from: {$server['REMOTE_ADDR']}");
 
         $next();
@@ -846,13 +846,17 @@ class UserMiddleware
 $database = new Database();
 $logger = new Logger();
 
+$routes = Router::for('GET', '/users', $_SERVER, $database, $logger)
+    ->middleware(UserMiddleware::class)
+    ->get('/users', [UserController::class, 'index']);
+
 $routes->dispatch();
 ```
 
 ##### Complete Example
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 // Create middleware classes
 class AuthMiddleware
@@ -891,7 +895,7 @@ class AdminMiddleware
 }
 
 // Define routes with middleware
-$routes = Routes::collect()
+$routes = Router::for()
     // Global middleware for all routes
     ->middleware([
         LogMiddleware::class,
@@ -916,8 +920,8 @@ $routes = Routes::collect()
         echo json_encode(['error' => 'Not Found']);
     });
 
-// Dispatch with $_SERVER
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER);
+// Dispatch
+$routes->dispatch();
 ```
 
 ##### Middleware and Caching
@@ -930,11 +934,11 @@ Just like routes, **middleware with closures cannot be cached** because PHP clos
 - Invokable classes: `AuthMiddleware::class`
 
 ❌ **Non-cacheable middleware:**
-- Closures: `function ($server, $next) { ... }`
+- Closures: `function ($next, $server) { ... }`
 
 ```php
 // ✅ Can be cached (all middleware are class names)
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->middleware(AuthMiddleware::class)
     ->middleware(LoggingMiddleware::class)
     ->get('/users', [UserController::class, 'index'])
@@ -945,8 +949,8 @@ if ($routes->isCacheable()) {
 }
 
 // ❌ Cannot be cached (contains closure middleware)
-$routes = Routes::collect()
-    ->middleware(function ($server, $next) {
+$routes = Router::for('GET', '/users', $_SERVER)
+    ->middleware(function ($next, $server) {
         // Closure cannot be serialized
         echo "Logging...";
         $next();
@@ -965,11 +969,11 @@ When loading cached routes, middleware is automatically restored:
 
 ```php
 $compiled = file_get_contents('cache/routes.cache');
-$routes = Routes::collect()->loadCompiled($compiled);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->loadCompiled($compiled);
 
 // Both global and per-route middleware are restored
-// Pass $_SERVER and any dependencies to dispatch
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER);
+$routes->dispatch();
 ```
 
 #### Route Caching
@@ -988,15 +992,15 @@ Compile routes for production performance:
 
 ❌ **Non-cacheable route types:**
 - Closures: `function ($params) { echo 'Hello'; }`
-- Closure middleware: `function ($server, $next) { ... }`
+- Closure middleware: `function ($next, $server) { ... }`
 
 ##### Compiling Routes
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 // Define routes (using cacheable formats only)
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->get('/users', [UserController::class, 'index'])
     ->get('/users/{id:\d+}', [UserController::class, 'show'])
     ->post('/users', [UserController::class, 'create']);
@@ -1009,9 +1013,9 @@ file_put_contents('cache/routes.cache', $compiled);
 ##### Checking Cacheability
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->get('/users', [UserController::class, 'index'])
     ->get('/posts', function ($params) {
         echo 'Posts'; // Closure - not cacheable!
@@ -1027,15 +1031,16 @@ if ($routes->isCacheable()) {
 ##### Loading Cached Routes
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 // Load compiled routes from cache
 $compiled = file_get_contents('cache/routes.cache');
 
-$routes = Routes::collect()->loadCompiled($compiled);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->loadCompiled($compiled);
 
 // Dispatch immediately - no route definitions needed
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 ##### Complete Caching Example
@@ -1043,9 +1048,9 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 **build-cache.php** (run once to build cache):
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for('', '')
     ->get('/', 'Home')
     ->get('/users', [UserController::class, 'index'])
     ->get('/users/{id:\d+}', [UserController::class, 'show']);
@@ -1061,12 +1066,13 @@ echo "✓ Route cache built successfully\n";
 **index.php** (production entry point):
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 $compiled = file_get_contents('cache/routes.cache');
-$routes = Routes::collect()->loadCompiled($compiled);
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->loadCompiled($compiled);
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 **Performance impact:**
@@ -1079,9 +1085,9 @@ $routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 Routes support fluent method chaining through the `PendingRoute` class:
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
-$routes = Routes::collect()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
     ->get('/', 'Home Page')
     ->get('/about', 'About Us')
     ->get('/users/{id:\d+}', [UserController::class, 'show'])
@@ -1093,13 +1099,13 @@ $routes = Routes::collect()
         echo '404 - Not Found';
     });
 
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
+$routes->dispatch();
 ```
 
 **How it works:**
 - HTTP methods (`get()`, `post()`, etc.) return a `PendingRoute` instance
-- `PendingRoute` proxies HTTP methods back to `Routes`, allowing continuous chaining
-- Configuration methods (`where()`, `name()`) operate on `PendingRoute` and return self
+- `PendingRoute` proxies HTTP methods back to `Router`, allowing continuous chaining
+- Configuration methods (`where()`, `name()`, `middleware()`) operate on `PendingRoute` and return self
 - Routes are automatically finalized when you define the next route or call a terminal method (`dispatch()`, `fallback()`)
 
 This allows you to:
@@ -1178,19 +1184,19 @@ $routes->get('/users/{id}', function ($params) {
 #### Complete Example
 
 ```php
-use Zerotoprod\WebFramework\Routes;
+use Zerotoprod\WebFramework\Router;
 
 class UserController {
     public function index($params) {
         echo json_encode(['users' => ['Alice', 'Bob']]);
     }
 
-    public function show($params, $db) {
+    public function show($params, $server, $db) {
         $user = $db->find('users', $params['id']);
         echo json_encode($user);
     }
 
-    public function create($params, $db) {
+    public function create($params, $server, $db) {
         $userId = $db->insert('users', $_POST);
         echo json_encode(['id' => $userId]);
     }
@@ -1199,8 +1205,8 @@ class UserController {
 // Initialize database
 $database = new Database();
 
-// Define routes
-$routes = Routes::collect()
+// Define routes with context
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER, $database)
     ->get('/', 'Welcome to the API')
     ->get('/users', [UserController::class, 'index'])
         ->name('users.index')
@@ -1222,8 +1228,8 @@ $routes = Routes::collect()
         echo json_encode(['error' => '404 Not Found']);
     });
 
-// Dispatch with dependency injection
-$routes->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $database);
+// Dispatch
+$routes->dispatch();
 ```
 
 ## Contributing
