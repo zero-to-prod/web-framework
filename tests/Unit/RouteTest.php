@@ -484,7 +484,9 @@ class RouteTest extends TestCase
     public function string_action_echoes_output(): void
     {
         $routes = Router::for('GET', '/hello')
-            ->get('/hello', 'Hello World');
+            ->get('/hello', function () {
+                echo 'Hello World';
+            });
 
         ob_start();
         $routes->dispatch();

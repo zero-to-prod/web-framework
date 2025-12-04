@@ -445,10 +445,10 @@ class Router
      */
     public function isCacheable(): bool
     {
-        return !array_filter($this->global_middleware, function ($mw) {
+        return !array_filter($this->global_middleware, static function ($mw) {
                 return $mw instanceof Closure;
             })
-            && !array_filter($this->routes, function ($route) {
+            && !array_filter($this->routes, static function ($route) {
                 return !$route->isCacheable();
             });
     }
@@ -547,7 +547,7 @@ class Router
     private function validateConstraint(string $param, string $pattern): void
     {
         if (@preg_match('#^'.$pattern.'$#', '') === false) {
-            throw new InvalidArgumentException("Invalid regex pattern for constraint '{$param}': {$pattern}");
+            throw new InvalidArgumentException("Invalid regex pattern for constraint '$param': $pattern");
         }
     }
 
@@ -757,7 +757,6 @@ class Router
      * 1. Controller array: [ClassName::class, 'methodName']
      * 2. Invokable class: ClassName::class (must have __invoke method)
      * 3. Closure: function($params) { ... }
-     * 4. String: Plain text to echo
      *
      * @param  mixed  $action  Action to execute
      * @param  array  $params  Route parameters extracted from URI
@@ -777,20 +776,14 @@ class Router
             return;
         }
 
-        if (is_string($action)) {
-            if (method_exists($action, '__invoke')) {
-                (new $action())($params, ...$this->args);
-
-                return;
-            }
-
-            echo $action;
+        if (is_string($action) && method_exists($action, '__invoke')) {
+            (new $action())($params, ...$this->args);
 
             return;
         }
 
         if (!is_callable($action)) {
-            throw new InvalidArgumentException('Action must be callable, controller array, or string');
+            throw new InvalidArgumentException('Action must be callable (closure), controller array [Class::class, \'method\'], or invokable class');
         }
 
         $action($params, ...$this->args);
@@ -805,20 +798,20 @@ class Router
      * @return void
      * @link https://github.com/zero-to-prod/web-framework
      */
-    private function executeWithMiddleware($route, array $params): void
+    private function executeWithMiddleware(?Route $route, array $params): void
     {
         $middleware = $route && $route->middleware
             ? array_merge($this->global_middleware, $route->middleware)
             : $this->global_middleware;
 
         if (empty($middleware)) {
-            $this->execute($route ? $route->action : $this->not_found_handler, $params);
+            $this->execute($route->action ?? $this->not_found_handler, $params);
 
             return;
         }
 
         $pipeline = function () use ($route, $params) {
-            $this->execute($route ? $route->action : $this->not_found_handler, $params);
+            $this->execute($route->action ?? $this->not_found_handler, $params);
         };
 
         foreach (array_reverse($middleware) as $mw) {
