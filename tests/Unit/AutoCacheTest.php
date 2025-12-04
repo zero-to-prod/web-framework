@@ -88,7 +88,7 @@ class AutoCacheTest extends TestCase
         $router->dispatch();
         ob_end_clean();
 
-        $this->assertFileNotExists($this->cache_file);
+        $this->assertFalse(file_exists($this->cache_file));
     }
 
     /** @test */
@@ -218,7 +218,7 @@ class AutoCacheTest extends TestCase
         $router->dispatch();
         ob_end_clean();
 
-        $this->assertFileNotExists($this->cache_file);
+        $this->assertFalse(file_exists($this->cache_file));
     }
 
     /** @test */
