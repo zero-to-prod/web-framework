@@ -55,6 +55,9 @@ class Router
     /** @var array */
     private $pattern_index = [];
 
+    /** @var array Indexed by route name for URL generation */
+    private $named_routes = [];
+
     /** @var callable|null */
     private $not_found_handler = null;
 
@@ -75,6 +78,30 @@ class Router
 
     /** @var bool Whether indices have been built */
     private $indices_built = false;
+
+    /** @var array Stack of group attributes */
+    private $group_stack = [];
+
+    /** @var string|null Pending prefix for next group */
+    private $pending_group_prefix = null;
+
+    /** @var array|null Pending middleware for next group */
+    private $pending_group_middleware = null;
+
+    /** @var string|null Path to cache file */
+    private $cache_path = null;
+
+    /** @var string Environment variable to check for caching */
+    private $cache_env_var = 'APP_ENV';
+
+    /** @var array Environments where caching is enabled */
+    private $cache_envs = ['production'];
+
+    /** @var bool Whether auto-cache is enabled */
+    private $auto_cache_enabled = false;
+
+    /** @var bool Whether routes were loaded from cache */
+    private $cache_loaded = false;
 
     /** @var string Error message for methods that require a route to be defined first */
     private const NO_ROUTE_DEFINED = 'No route to configure. Call get/post/etc first.';
@@ -241,6 +268,132 @@ class Router
     }
 
     /**
+     * Register RESTful resource routes.
+     *
+     * Generates all 7 standard RESTful routes:
+     * - GET    /{name}           -> index()
+     * - GET    /{name}/create    -> create()
+     * - POST   /{name}           -> store()
+     * - GET    /{name}/{id}      -> show()
+     * - GET    /{name}/{id}/edit -> edit()
+     * - PUT    /{name}/{id}      -> update()
+     * - DELETE /{name}/{id}      -> destroy()
+     *
+     * @param  string  $name        Resource name (e.g., 'users')
+     * @param  string  $controller  Controller class name
+     * @param  array   $options     Optional filters ('only' or 'except')
+     *
+     * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function resource(string $name, string $controller, array $options = []): self
+    {
+        $name = trim($name, '/');
+
+        $actions = [
+            'index' => ['get', "/{$name}", 'index'],
+            'create' => ['get', "/{$name}/create", 'create'],
+            'store' => ['post', "/{$name}", 'store'],
+            'show' => ['get', "/{$name}/{id}", 'show'],
+            'edit' => ['get', "/{$name}/{id}/edit", 'edit'],
+            'update' => ['put', "/{$name}/{id}", 'update'],
+            'destroy' => ['delete', "/{$name}/{id}", 'destroy'],
+        ];
+
+        // Handle 'only' parameter
+        if (isset($options['only'])) {
+            $actions = array_intersect_key($actions, array_flip((array) $options['only']));
+        }
+
+        // Handle 'except' parameter
+        if (isset($options['except'])) {
+            $actions = array_diff_key($actions, array_flip((array) $options['except']));
+        }
+
+        // Register each action
+        foreach ($actions as $key => $action_data) {
+            list($method, $uri, $action) = $action_data;
+            $this->$method($uri, [$controller, $action])
+                ->name("{$name}.{$key}");
+        }
+
+        return $this;
+    }
+
+    /**
+     * Set prefix for next group.
+     *
+     * @param  string  $prefix
+     *
+     * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function prefix(string $prefix): self
+    {
+        $this->pending_group_prefix = trim($prefix, '/');
+        return $this;
+    }
+
+    /**
+     * Create a route group with shared attributes.
+     *
+     * @param  callable  $callback
+     *
+     * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function group(callable $callback): self
+    {
+        // Build group attributes from pending state
+        $attributes = [];
+
+        if ($this->pending_group_prefix !== null) {
+            $attributes['prefix'] = $this->pending_group_prefix;
+            $this->pending_group_prefix = null;
+        }
+
+        if ($this->pending_group_middleware !== null) {
+            $attributes['middleware'] = $this->pending_group_middleware;
+            $this->pending_group_middleware = null;
+        }
+
+        // Push to stack
+        $this->group_stack[] = $attributes;
+
+        // Execute callback with router instance
+        $callback($this);
+
+        // Pop from stack
+        array_pop($this->group_stack);
+
+        return $this;
+    }
+
+    /**
+     * Enable automatic route caching based on environment.
+     *
+     * @param  string       $cache_path  Path to cache file
+     * @param  string|null  $env_var     Environment variable to check (default: 'APP_ENV')
+     * @param  array        $cache_envs  Environments where caching is enabled (default: ['production'])
+     *
+     * @return self  Returns $this for method chaining
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function autoCache(string $cache_path, ?string $env_var = null, array $cache_envs = null): self
+    {
+        $this->cache_path = $cache_path;
+        if ($env_var !== null) {
+            $this->cache_env_var = $env_var;
+        }
+        if ($cache_envs !== null) {
+            $this->cache_envs = $cache_envs;
+        }
+        $this->auto_cache_enabled = true;
+
+        return $this;
+    }
+
+    /**
      * Define fallback handler for 404 responses.
      *
      * @param  mixed  $action  Fallback action
@@ -277,11 +430,14 @@ class Router
             $this->global_middleware[] = $middleware;
         }
 
+        // Mark indices (and pipelines) as needing rebuild
+        $this->indices_built = false;
+
         return $this;
     }
 
     /**
-     * Add middleware to the last defined route.
+     * Add middleware to the last defined route or set pending group middleware.
      *
      * @param  mixed  $middleware  Single middleware (callable/class name) or array
      *
@@ -292,8 +448,13 @@ class Router
      */
     public function middleware($middleware): self
     {
+        // If we're setting up for a group (no last route), store as pending
         if ($this->last_route === null) {
-            throw new RuntimeException(self::NO_ROUTE_DEFINED.' Use globalMiddleware() for global middleware.');
+            $this->pending_group_middleware = array_merge(
+                $this->pending_group_middleware ?? [],
+                (array) $middleware
+            );
+            return $this;
         }
 
         $this->last_route = $this->last_route->withMiddleware($middleware);
@@ -320,6 +481,11 @@ class Router
      */
     public function dispatch(): bool
     {
+        // If auto-cache is enabled, try loading from cache first
+        if ($this->auto_cache_enabled && $this->shouldUseCache()) {
+            $this->loadCacheIfExists();
+        }
+
         // Build indices lazily on first dispatch
         if (!$this->indices_built) {
             $this->buildIndices();
@@ -331,6 +497,12 @@ class Router
         // Level 1: O(1) lookup for static routes
         if (isset($this->static_index[$key])) {
             $this->executeWithMiddleware($this->static_index[$key], []);
+
+            // After dispatch, write cache if needed
+            if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
+                $this->writeCache();
+            }
+
             return true;
         }
 
@@ -345,6 +517,12 @@ class Router
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
                     $this->executeWithMiddleware($route, $params);
+
+                    // After dispatch, write cache if needed
+                    if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
+                        $this->writeCache();
+                    }
+
                     return true;
                 }
             }
@@ -361,6 +539,12 @@ class Router
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
                     $this->executeWithMiddleware($route, $params);
+
+                    // After dispatch, write cache if needed
+                    if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
+                        $this->writeCache();
+                    }
+
                     return true;
                 }
             }
@@ -368,7 +552,18 @@ class Router
 
         if ($this->not_found_handler !== null) {
             $this->executeWithMiddleware(null, []);
+
+            // After dispatch, write cache if needed
+            if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
+                $this->writeCache();
+            }
+
             return true;
+        }
+
+        // After dispatch, write cache if needed
+        if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
+            $this->writeCache();
         }
 
         return false;
@@ -503,7 +698,10 @@ class Router
             'routes' => array_map(static function ($route) {
                 return $route->toArray();
             }, $this->routes),
-            'global_middleware' => $this->global_middleware
+            'global_middleware' => $this->global_middleware,
+            'named_routes' => array_map(static function ($route) {
+                return $route->toArray();
+            }, $this->named_routes)
         ]);
     }
 
@@ -524,6 +722,13 @@ class Router
 
         foreach ($routes as $routeData) {
             $this->storeRoute(Route::fromArray($routeData));
+        }
+
+        // Load named routes
+        if (isset($compiled['named_routes'])) {
+            $this->named_routes = array_map(static function ($routeData) {
+                return Route::fromArray($routeData);
+            }, $compiled['named_routes']);
         }
 
         return $this;
@@ -597,7 +802,78 @@ class Router
         $this->last_route = $this->last_route->withName($name);
         $this->replaceLastRoute($this->last_route);
 
+        // Register in named routes index
+        $this->named_routes[$name] = $this->last_route;
+
         return $this;
+    }
+
+    /**
+     * Generate URL from named route.
+     *
+     * @param  string  $name    Route name
+     * @param  array   $params  Route parameters
+     *
+     * @return string
+     *
+     * @throws RuntimeException  If route not found or parameters invalid
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function route(string $name, array $params = []): string
+    {
+        if (!isset($this->named_routes[$name])) {
+            throw new RuntimeException("Route not found: {$name}");
+        }
+
+        return $this->generateUrl($this->named_routes[$name], $params);
+    }
+
+    /**
+     * Generate URL from route pattern and parameters.
+     *
+     * @param  Route  $route
+     * @param  array  $params
+     *
+     * @return string
+     *
+     * @throws RuntimeException  If required parameter missing or constraint validation fails
+     * @internal
+     */
+    private function generateUrl(Route $route, array $params): string
+    {
+        $url = $route->pattern;
+
+        // Replace all parameters
+        foreach ($route->params as $param) {
+            $is_optional = in_array($param, $route->optional_params, true);
+
+            // Check if parameter provided
+            if (!isset($params[$param])) {
+                if (!$is_optional) {
+                    throw new RuntimeException("Missing required parameter: {$param}");
+                }
+                // Remove optional parameter placeholder
+                $url = preg_replace('#/\{'.preg_quote($param).'\?\}#', '', $url);
+                continue;
+            }
+
+            $value = $params[$param];
+
+            // Validate against constraint if present
+            if (isset($route->constraints[$param])) {
+                $pattern = '#^'.$route->constraints[$param].'$#';
+                if (!preg_match($pattern, (string) $value)) {
+                    throw new RuntimeException(
+                        "Parameter '{$param}' value '{$value}' does not match constraint"
+                    );
+                }
+            }
+
+            // Replace parameter (both required and optional syntax)
+            $url = str_replace(['{'.$param.'}', '{'.$param.'?}'], (string) $value, $url);
+        }
+
+        return $url;
     }
 
     /**
@@ -618,6 +894,9 @@ class Router
             throw new InvalidArgumentException("Action cannot be null for route: $method $uri");
         }
 
+        // Apply group prefix
+        $uri = $this->applyGroupPrefix($uri);
+
         $uri = $uri === '' || $uri[0] !== '/'
             ? '/'.$uri
             : $uri;
@@ -634,8 +913,70 @@ class Router
             $action
         );
 
+        // Apply group middleware
+        $route = $this->applyGroupMiddleware($route);
+
         $this->storeRoute($route);
         $this->last_route = $route;
+    }
+
+    /**
+     * Apply group prefix to pattern.
+     *
+     * @param  string  $pattern
+     *
+     * @return string
+     * @internal
+     */
+    private function applyGroupPrefix(string $pattern): string
+    {
+        if (empty($this->group_stack)) {
+            return $pattern;
+        }
+
+        $prefixes = [];
+        foreach ($this->group_stack as $group) {
+            if (isset($group['prefix'])) {
+                $prefixes[] = $group['prefix'];
+            }
+        }
+
+        if (empty($prefixes)) {
+            return $pattern;
+        }
+
+        $prefix = '/'.implode('/', $prefixes);
+        $pattern = '/'.trim($pattern, '/');
+
+        return $prefix.$pattern;
+    }
+
+    /**
+     * Apply group middleware to route.
+     *
+     * @param  Route  $route
+     *
+     * @return Route
+     * @internal
+     */
+    private function applyGroupMiddleware(Route $route): Route
+    {
+        if (empty($this->group_stack)) {
+            return $route;
+        }
+
+        $middleware = [];
+        foreach ($this->group_stack as $group) {
+            if (isset($group['middleware'])) {
+                $middleware = array_merge($middleware, (array) $group['middleware']);
+            }
+        }
+
+        if (empty($middleware)) {
+            return $route;
+        }
+
+        return $route->withMiddleware($middleware);
     }
 
     /**
@@ -671,6 +1012,9 @@ class Router
 
         // Build indices from routes array
         foreach ($this->routes as $route) {
+            // Build middleware pipeline (once)
+            $route->middleware_pipeline = $this->buildMiddlewarePipeline($route);
+
             // Build static index for routes without parameters (O(1) lookup)
             if (empty($route->params)) {
                 $this->static_index[$route->method.':'.$route->pattern] = $route;
@@ -838,28 +1182,325 @@ class Router
      */
     private function executeWithMiddleware(?Route $route, array $params): void
     {
-        $middleware = $route && $route->middleware
-            ? array_merge($this->global_middleware, $route->middleware)
-            : $this->global_middleware;
-
-        if (empty($middleware)) {
-            $this->execute($route->action ?? $this->not_found_handler, $params);
-
+        // Use pre-built pipeline if available
+        if ($route && $route->middleware_pipeline !== null) {
+            ($route->middleware_pipeline)($params, $this->args);
             return;
         }
 
-        $pipeline = function () use ($route, $params) {
-            $this->execute($route->action ?? $this->not_found_handler, $params);
-        };
-
-        foreach (array_reverse($middleware) as $mw) {
-            $next = $pipeline;
-            $pipeline = function () use ($mw, $next) {
-                (is_string($mw) ? new $mw() : $mw)($next, ...$this->args);
+        // Handle fallback with global middleware (not a route, so no pre-built pipeline)
+        if ($route === null && !empty($this->global_middleware)) {
+            $pipeline = function () use ($params) {
+                $this->execute($this->not_found_handler, $params);
             };
+
+            foreach (array_reverse($this->global_middleware) as $mw) {
+                $pipeline = $this->isPsr15Middleware($mw)
+                    ? $this->wrapPsr15($mw, $pipeline)
+                    : $this->wrapVariadic($mw, $pipeline);
+            }
+
+            $pipeline();
+            return;
         }
 
-        $pipeline();
+        // No middleware - direct execution
+        $this->execute($route->action ?? $this->not_found_handler, $params);
+    }
+
+    /**
+     * Check if middleware is PSR-15 (otherwise treat as variadic legacy).
+     *
+     * @param  mixed  $middleware
+     *
+     * @return bool
+     * @internal
+     */
+    private function isPsr15Middleware($middleware): bool
+    {
+        if (is_string($middleware) && class_exists($middleware)) {
+            return in_array('Psr\\Http\\Server\\MiddlewareInterface', class_implements($middleware) ?: []);
+        }
+
+        if (is_object($middleware)) {
+            return $middleware instanceof \Psr\Http\Server\MiddlewareInterface;
+        }
+
+        return false;
+    }
+
+    /**
+     * Wrap PSR-15 middleware.
+     *
+     * @param  mixed     $middleware
+     * @param  callable  $next
+     *
+     * @return callable
+     * @internal
+     */
+    private function wrapPsr15($middleware, callable $next): callable
+    {
+        return function () use ($middleware, $next) {
+            // Create PSR-7 request using nyholm/psr7-server
+            $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
+            $creator = new \Nyholm\Psr7Server\ServerRequestCreator(
+                $psr17Factory,
+                $psr17Factory,
+                $psr17Factory,
+                $psr17Factory
+            );
+            $request = $creator->fromGlobals();
+
+            // Instantiate if class name
+            $middleware = is_string($middleware) ? new $middleware() : $middleware;
+
+            // Execute PSR-15 middleware
+            $handler = new \Zerotoprod\WebFramework\Http\RequestHandler(
+                function ($request) use ($next, $psr17Factory) {
+                    ob_start();
+                    $next();
+                    $body = ob_get_clean();
+
+                    return $psr17Factory->createResponse(200)->withBody(
+                        $psr17Factory->createStream($body)
+                    );
+                }
+            );
+
+            $response = $middleware->process($request, $handler);
+
+            // Send response
+            http_response_code($response->getStatusCode());
+            foreach ($response->getHeaders() as $name => $values) {
+                foreach ($values as $value) {
+                    header("$name: $value", false);
+                }
+            }
+            echo $response->getBody();
+        };
+    }
+
+    /**
+     * Wrap variadic middleware (legacy).
+     *
+     * @param  mixed     $middleware
+     * @param  callable  $next
+     *
+     * @return callable
+     * @internal
+     */
+    private function wrapVariadic($middleware, callable $next): callable
+    {
+        return function () use ($middleware, $next) {
+            $middleware = is_string($middleware) ? new $middleware() : $middleware;
+            $middleware($next, ...$this->args);
+        };
+    }
+
+    /**
+     * Build middleware pipeline once and cache it.
+     *
+     * @param  Route  $route
+     *
+     * @return callable|null Compiled middleware pipeline or null if no middleware
+     * @internal
+     */
+    private function buildMiddlewarePipeline(Route $route): ?callable
+    {
+        $middleware = array_merge($this->global_middleware, $route->middleware ?? []);
+
+        if (empty($middleware)) {
+            return null;
+        }
+
+        // Pre-analyze middleware types (once)
+        $compiled_middleware = [];
+        foreach ($middleware as $mw) {
+            $compiled_middleware[] = [
+                'middleware' => $mw,
+                'is_psr15' => $this->isPsr15Middleware($mw)
+            ];
+        }
+
+        // Build the pipeline (closures capture compiled info)
+        $pipeline = function ($params, $args) use ($route) {
+            $this->execute($route->action, $params);
+        };
+
+        foreach (array_reverse($compiled_middleware) as $compiled) {
+            $pipeline = $compiled['is_psr15']
+                ? $this->wrapPsr15Compiled($compiled['middleware'], $pipeline)
+                : $this->wrapVariadicCompiled($compiled['middleware'], $pipeline);
+        }
+
+        return $pipeline;
+    }
+
+    /**
+     * Wrap PSR-15 middleware (compiled version - type already determined).
+     *
+     * @param  mixed     $middleware
+     * @param  callable  $next
+     *
+     * @return callable
+     * @internal
+     */
+    private function wrapPsr15Compiled($middleware, callable $next): callable
+    {
+        return function ($params, $args) use ($middleware, $next) {
+            // Create PSR-7 request using nyholm/psr7-server
+            $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
+            $creator = new \Nyholm\Psr7Server\ServerRequestCreator(
+                $psr17Factory,
+                $psr17Factory,
+                $psr17Factory,
+                $psr17Factory
+            );
+            $request = $creator->fromGlobals();
+
+            // Instantiate if class name
+            $middleware = is_string($middleware) ? new $middleware() : $middleware;
+
+            // Execute PSR-15 middleware
+            $handler = new \Zerotoprod\WebFramework\Http\RequestHandler(
+                function ($request) use ($next, $psr17Factory, $params, $args) {
+                    ob_start();
+                    $next($params, $args);
+                    $body = ob_get_clean();
+
+                    return $psr17Factory->createResponse(200)->withBody(
+                        $psr17Factory->createStream($body)
+                    );
+                }
+            );
+
+            $response = $middleware->process($request, $handler);
+
+            // Send response
+            http_response_code($response->getStatusCode());
+            foreach ($response->getHeaders() as $name => $values) {
+                foreach ($values as $value) {
+                    header("$name: $value", false);
+                }
+            }
+            echo $response->getBody();
+        };
+    }
+
+    /**
+     * Wrap variadic middleware (compiled version - type already determined).
+     *
+     * @param  mixed     $middleware
+     * @param  callable  $next
+     *
+     * @return callable
+     * @internal
+     */
+    private function wrapVariadicCompiled($middleware, callable $next): callable
+    {
+        return function ($params, $args) use ($middleware, $next) {
+            $middleware = is_string($middleware) ? new $middleware() : $middleware;
+            $middleware(function () use ($next, $params, $args) {
+                $next($params, $args);
+            }, ...$args);
+        };
+    }
+
+    /**
+     * Check if we should use cached routes.
+     *
+     * @return bool
+     * @internal
+     */
+    private function shouldUseCache(): bool
+    {
+        if (empty($this->cache_path)) {
+            return false;
+        }
+
+        $env = getenv($this->cache_env_var);
+        if ($env === false) {
+            $env = $_ENV[$this->cache_env_var] ?? 'local';
+        }
+
+        return in_array($env, $this->cache_envs, true);
+    }
+
+    /**
+     * Load routes from cache if file exists.
+     *
+     * @return void
+     * @internal
+     */
+    private function loadCacheIfExists(): void
+    {
+        if (!file_exists($this->cache_path)) {
+            return;
+        }
+
+        try {
+            $compiled = file_get_contents($this->cache_path);
+            $this->loadCompiled($compiled);
+            $this->cache_loaded = true;
+        } catch (\Exception $e) {
+            // Silently fail - will register routes normally
+            error_log('Failed to load route cache: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Check if we should write cache after dispatch.
+     *
+     * @return bool
+     * @internal
+     */
+    private function shouldWriteCache(): bool
+    {
+        // Don't write if we loaded from cache
+        if ($this->cache_loaded) {
+            return false;
+        }
+
+        // Don't write if cache path not set
+        if (empty($this->cache_path)) {
+            return false;
+        }
+
+        // Don't write if not in caching environment
+        if (!$this->shouldUseCache()) {
+            return false;
+        }
+
+        // Don't write if routes aren't cacheable
+        if (!$this->isCacheable()) {
+            error_log('Warning: Routes contain closures and cannot be cached');
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Write routes to cache file.
+     *
+     * @return void
+     * @internal
+     */
+    private function writeCache(): void
+    {
+        try {
+            // Ensure cache directory exists
+            $dir = dirname($this->cache_path);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+
+            // Compile and write
+            $compiled = $this->compile();
+            file_put_contents($this->cache_path, $compiled);
+        } catch (\Exception $e) {
+            error_log('Failed to write route cache: '.$e->getMessage());
+        }
     }
 
 }

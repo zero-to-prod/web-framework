@@ -69,6 +69,12 @@ class Route
     public $middleware = [];
 
     /**
+     * @var callable|null Cached compiled middleware pipeline
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public $middleware_pipeline = null;
+
+    /**
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function __construct(
