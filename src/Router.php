@@ -67,6 +67,9 @@ class Router
     /** @var Route|null Track last route for fluent chaining */
     private $last_route = null;
 
+    /** @var int|null Index of last route in routes array */
+    private $last_route_index = null;
+
     /** @var string HTTP method for dispatch */
     private $method;
 
@@ -105,6 +108,20 @@ class Router
 
     /** @var string Error message for methods that require a route to be defined first */
     private const NO_ROUTE_DEFINED = 'No route to configure. Call get/post/etc first.';
+
+    /**
+     * RESTful resource action definitions.
+     * Format: [action_name => [http_method, uri_suffix, controller_method]]
+     */
+    private const RESTFUL_ACTIONS = [
+        'index' => ['get', '', 'index'],
+        'create' => ['get', '/create', 'create'],
+        'store' => ['post', '', 'store'],
+        'show' => ['get', '/{id}', 'show'],
+        'edit' => ['get', '/{id}/edit', 'edit'],
+        'update' => ['put', '/{id}', 'update'],
+        'destroy' => ['delete', '/{id}', 'destroy'],
+    ];
 
     /**
      * @link https://github.com/zero-to-prod/web-framework
@@ -289,35 +306,60 @@ class Router
     public function resource(string $name, string $controller, array $options = []): self
     {
         $name = trim($name, '/');
+        $actions = $this->filterRestfulActions($options);
 
-        $actions = [
-            'index' => ['get', "/{$name}", 'index'],
-            'create' => ['get', "/{$name}/create", 'create'],
-            'store' => ['post', "/{$name}", 'store'],
-            'show' => ['get', "/{$name}/{id}", 'show'],
-            'edit' => ['get', "/{$name}/{id}/edit", 'edit'],
-            'update' => ['put', "/{$name}/{id}", 'update'],
-            'destroy' => ['delete', "/{$name}/{id}", 'destroy'],
-        ];
-
-        // Handle 'only' parameter
-        if (isset($options['only'])) {
-            $actions = array_intersect_key($actions, array_flip((array) $options['only']));
-        }
-
-        // Handle 'except' parameter
-        if (isset($options['except'])) {
-            $actions = array_diff_key($actions, array_flip((array) $options['except']));
-        }
-
-        // Register each action
         foreach ($actions as $key => $action_data) {
-            list($method, $uri, $action) = $action_data;
-            $this->$method($uri, [$controller, $action])
-                ->name("{$name}.{$key}");
+            $this->registerRestfulAction($name, $controller, $action_data, $key);
         }
 
         return $this;
+    }
+
+    /**
+     * Filter RESTful actions based on options.
+     *
+     * @param  array  $options  ['only' => [...]] or ['except' => [...]]
+     *
+     * @return array  Filtered actions
+     * @internal
+     */
+    private function filterRestfulActions(array $options): array
+    {
+        $actions = self::RESTFUL_ACTIONS;
+
+        if (isset($options['only'])) {
+            return array_intersect_key($actions, array_flip((array) $options['only']));
+        }
+
+        if (isset($options['except'])) {
+            return array_diff_key($actions, array_flip((array) $options['except']));
+        }
+
+        return $actions;
+    }
+
+    /**
+     * Register a single RESTful action.
+     *
+     * @param  string  $resource_name
+     * @param  string  $controller
+     * @param  array   $action_data
+     * @param  string  $action_key
+     *
+     * @return void
+     * @internal
+     */
+    private function registerRestfulAction(
+        string $resource_name,
+        string $controller,
+        array $action_data,
+        string $action_key
+    ): void {
+        list($method, $suffix, $action) = $action_data;
+        $uri = "/{$resource_name}{$suffix}";
+
+        $this->$method($uri, [$controller, $action])
+            ->name("{$resource_name}.{$action_key}");
     }
 
     /**
@@ -491,81 +533,22 @@ class Router
             $this->buildIndices();
         }
 
-        $path = $this->stripQueryString($this->uri);
-        $key = $this->method.':'.$path;
+        $params = [];
+        $route = $this->findRoute($this->method, $this->uri, $params);
 
-        // Level 1: O(1) lookup for static routes
-        if (isset($this->static_index[$key])) {
-            $this->executeWithMiddleware($this->static_index[$key], []);
-
-            // After dispatch, write cache if needed
-            if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
-                $this->writeCache();
-            }
-
+        if ($route !== null) {
+            $this->executeWithMiddleware($route, $params);
+            $this->finalizeCacheIfNeeded();
             return true;
-        }
-
-        // Level 2: Prefix-based lookup (narrow down candidates dramatically)
-        $prefix = $this->extractPrefix($path);
-        $prefix_key = $this->method.':'.$prefix;
-
-        if (isset($this->prefix_index[$prefix_key])) {
-            // Only check routes with matching prefix
-            // Use matchAndExtract to avoid double regex call
-            foreach ($this->prefix_index[$prefix_key] as $route) {
-                $params = [];
-                if ($route->matchAndExtract($path, $params)) {
-                    $this->executeWithMiddleware($route, $params);
-
-                    // After dispatch, write cache if needed
-                    if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
-                        $this->writeCache();
-                    }
-
-                    return true;
-                }
-            }
-        }
-
-        // Level 3: Fall back to method-based filtering for routes without specific prefix
-        if (isset($this->method_index[$this->method])) {
-            foreach ($this->method_index[$this->method] as $route) {
-                //  Skip if already checked via prefix
-                if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
-                    continue;
-                }
-
-                $params = [];
-                if ($route->matchAndExtract($path, $params)) {
-                    $this->executeWithMiddleware($route, $params);
-
-                    // After dispatch, write cache if needed
-                    if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
-                        $this->writeCache();
-                    }
-
-                    return true;
-                }
-            }
         }
 
         if ($this->not_found_handler !== null) {
             $this->executeWithMiddleware(null, []);
-
-            // After dispatch, write cache if needed
-            if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
-                $this->writeCache();
-            }
-
+            $this->finalizeCacheIfNeeded();
             return true;
         }
 
-        // After dispatch, write cache if needed
-        if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
-            $this->writeCache();
-        }
-
+        $this->finalizeCacheIfNeeded();
         return false;
     }
 
@@ -585,6 +568,59 @@ class Router
     }
 
     /**
+     * Find matching route using triple-level optimization.
+     *
+     * @param  string  $method  HTTP method
+     * @param  string  $uri     Request URI
+     * @param  array   $params  Output parameter for extracted route params
+     *
+     * @return Route|null  Matched route or null
+     * @internal
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    private function findRoute(string $method, string $uri, array &$params = []): ?Route
+    {
+        if (!$this->indices_built) {
+            $this->buildIndices();
+        }
+
+        $path = $this->stripQueryString($uri);
+        $key = $method.':'.$path;
+
+        // Level 1: O(1) static lookup
+        if (isset($this->static_index[$key])) {
+            $params = [];
+            return $this->static_index[$key];
+        }
+
+        // Level 2: O(1) prefix-based lookup
+        $prefix = $this->extractPrefix($path);
+        $prefix_key = $method.':'.$prefix;
+
+        if (isset($this->prefix_index[$prefix_key])) {
+            foreach ($this->prefix_index[$prefix_key] as $route) {
+                if ($route->matchAndExtract($path, $params)) {
+                    return $route;
+                }
+            }
+        }
+
+        // Level 3: Method-based fallback
+        if (isset($this->method_index[$method])) {
+            foreach ($this->method_index[$method] as $route) {
+                if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
+                    continue;
+                }
+                if ($route->matchAndExtract($path, $params)) {
+                    return $route;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Find a matching route for method and URI.
      *
      * Uses same triple-level optimization as dispatch().
@@ -600,45 +636,8 @@ class Router
      */
     public function matchRoute(string $method, string $uri): ?Route
     {
-        // Build indices lazily if not built yet
-        if (!$this->indices_built) {
-            $this->buildIndices();
-        }
-
-        $path = $this->stripQueryString($uri);
-        $key = $method.':'.$path;
-
-        // Level 1: Static route lookup
-        if (isset($this->static_index[$key])) {
-            return $this->static_index[$key];
-        }
-
-        // Level 2: Prefix-based lookup
-        $prefix = $this->extractPrefix($path);
-        $prefix_key = $method.':'.$prefix;
-
-        if (isset($this->prefix_index[$prefix_key])) {
-            foreach ($this->prefix_index[$prefix_key] as $route) {
-                if ($route->matches($path)) {
-                    return $route;
-                }
-            }
-        }
-
-        // Level 3: Method-based fallback
-        if (isset($this->method_index[$method])) {
-            foreach ($this->method_index[$method] as $route) {
-                if ($prefix !== '/' && strpos($route->pattern, $prefix) === 0) {
-                    continue;
-                }
-
-                if ($route->matches($path)) {
-                    return $route;
-                }
-            }
-        }
-
-        return null;
+        $params = [];
+        return $this->findRoute($method, $uri, $params);
     }
 
     /**
@@ -829,6 +828,72 @@ class Router
     }
 
     /**
+     * Validate parameter against constraint.
+     *
+     * @param  Route   $route
+     * @param  string  $param
+     * @param  mixed   $value
+     *
+     * @return void
+     *
+     * @throws RuntimeException  If validation fails
+     * @internal
+     */
+    private function validateUrlParameter(Route $route, string $param, $value): void
+    {
+        if (!isset($route->constraints[$param])) {
+            return;
+        }
+
+        $pattern = '#^'.$route->constraints[$param].'$#';
+
+        if (!preg_match($pattern, (string) $value)) {
+            throw new RuntimeException(
+                "Parameter '{$param}' value '{$value}' does not match constraint"
+            );
+        }
+    }
+
+    /**
+     * Build parameter replacements for URL generation.
+     *
+     * @param  Route  $route
+     * @param  array  $params
+     *
+     * @return array  Map of placeholder => value
+     *
+     * @throws RuntimeException  If required parameter missing
+     * @internal
+     */
+    private function buildUrlReplacements(Route $route, array $params): array
+    {
+        $replacements = [];
+
+        foreach ($route->params as $param) {
+            $is_optional = in_array($param, $route->optional_params, true);
+
+            // Check if parameter provided
+            if (!isset($params[$param])) {
+                if (!$is_optional) {
+                    throw new RuntimeException("Missing required parameter: {$param}");
+                }
+                // Mark optional for removal
+                $replacements['/{'.$param.'?}'] = '';
+                continue;
+            }
+
+            $value = $params[$param];
+            $this->validateUrlParameter($route, $param, $value);
+
+            // Add both syntaxes
+            $replacements['{'.$param.'}'] = (string) $value;
+            $replacements['{'.$param.'?}'] = (string) $value;
+        }
+
+        return $replacements;
+    }
+
+    /**
      * Generate URL from route pattern and parameters.
      *
      * @param  Route  $route
@@ -841,39 +906,8 @@ class Router
      */
     private function generateUrl(Route $route, array $params): string
     {
-        $url = $route->pattern;
-
-        // Replace all parameters
-        foreach ($route->params as $param) {
-            $is_optional = in_array($param, $route->optional_params, true);
-
-            // Check if parameter provided
-            if (!isset($params[$param])) {
-                if (!$is_optional) {
-                    throw new RuntimeException("Missing required parameter: {$param}");
-                }
-                // Remove optional parameter placeholder
-                $url = preg_replace('#/\{'.preg_quote($param).'\?\}#', '', $url);
-                continue;
-            }
-
-            $value = $params[$param];
-
-            // Validate against constraint if present
-            if (isset($route->constraints[$param])) {
-                $pattern = '#^'.$route->constraints[$param].'$#';
-                if (!preg_match($pattern, (string) $value)) {
-                    throw new RuntimeException(
-                        "Parameter '{$param}' value '{$value}' does not match constraint"
-                    );
-                }
-            }
-
-            // Replace parameter (both required and optional syntax)
-            $url = str_replace(['{'.$param.'}', '{'.$param.'?}'], (string) $value, $url);
-        }
-
-        return $url;
+        $replacements = $this->buildUrlReplacements($route, $params);
+        return str_replace(array_keys($replacements), array_values($replacements), $route->pattern);
     }
 
     /**
@@ -921,6 +955,33 @@ class Router
     }
 
     /**
+     * Extract current group state from stack.
+     *
+     * @return array  ['prefixes' => string[], 'middleware' => array]
+     * @internal
+     */
+    private function extractGroupState(): array
+    {
+        if (empty($this->group_stack)) {
+            return ['prefixes' => [], 'middleware' => []];
+        }
+
+        $prefixes = [];
+        $middleware = [];
+
+        foreach ($this->group_stack as $group) {
+            if (isset($group['prefix'])) {
+                $prefixes[] = $group['prefix'];
+            }
+            if (isset($group['middleware'])) {
+                $middleware = array_merge($middleware, (array) $group['middleware']);
+            }
+        }
+
+        return ['prefixes' => $prefixes, 'middleware' => $middleware];
+    }
+
+    /**
      * Apply group prefix to pattern.
      *
      * @param  string  $pattern
@@ -930,22 +991,13 @@ class Router
      */
     private function applyGroupPrefix(string $pattern): string
     {
-        if (empty($this->group_stack)) {
+        $state = $this->extractGroupState();
+
+        if (empty($state['prefixes'])) {
             return $pattern;
         }
 
-        $prefixes = [];
-        foreach ($this->group_stack as $group) {
-            if (isset($group['prefix'])) {
-                $prefixes[] = $group['prefix'];
-            }
-        }
-
-        if (empty($prefixes)) {
-            return $pattern;
-        }
-
-        $prefix = '/'.implode('/', $prefixes);
+        $prefix = '/'.implode('/', $state['prefixes']);
         $pattern = '/'.trim($pattern, '/');
 
         return $prefix.$pattern;
@@ -961,26 +1013,17 @@ class Router
      */
     private function applyGroupMiddleware(Route $route): Route
     {
-        if (empty($this->group_stack)) {
+        $state = $this->extractGroupState();
+
+        if (empty($state['middleware'])) {
             return $route;
         }
 
-        $middleware = [];
-        foreach ($this->group_stack as $group) {
-            if (isset($group['middleware'])) {
-                $middleware = array_merge($middleware, (array) $group['middleware']);
-            }
-        }
-
-        if (empty($middleware)) {
-            return $route;
-        }
-
-        return $route->withMiddleware($middleware);
+        return $route->withMiddleware($state['middleware']);
     }
 
     /**
-     * Store a route.
+     * Store a route and track its index.
      *
      * Indices are built lazily before first dispatch for better performance
      * when defining many routes.
@@ -990,6 +1033,7 @@ class Router
      */
     private function storeRoute(Route $route): void
     {
+        $this->last_route_index = count($this->routes);
         $this->routes[] = $route;
         $this->pattern_index[$route->method.':'.$route->pattern] = $route;
     }
@@ -1054,12 +1098,9 @@ class Router
      */
     private function replaceLastRoute(Route $route): void
     {
-        // Replace in routes array
-        foreach ($this->routes as $i => $r) {
-            if ($r->method === $route->method && $r->pattern === $route->pattern) {
-                $this->routes[$i] = $route;
-                break;
-            }
+        // Replace in routes array using tracked index (O(1) instead of O(n))
+        if ($this->last_route_index !== null) {
+            $this->routes[$this->last_route_index] = $route;
         }
 
         // Update pattern index
@@ -1103,22 +1144,51 @@ class Router
     {
         $pos = strpos($pattern, '{');
 
+        // No parameters - extract prefix from last segment
         if ($pos === false) {
-            // No parameters - return path up to last segment
-            $last_slash = strrpos($pattern, '/');
-            if ($last_slash === false || $last_slash === 0) {
-                return '/';
-            }
-
-            return substr($pattern, 0, $last_slash);
+            return $this->extractPrefixFromStatic($pattern);
         }
 
+        // Parameter at root - no meaningful prefix
         if ($pos === 0 || $pos === 1) {
             return '/';
         }
 
-        // Find the last slash before the first parameter
-        $prefix = substr($pattern, 0, $pos);
+        // Extract prefix before first parameter
+        return $this->extractPrefixBeforeParam($pattern, $pos);
+    }
+
+    /**
+     * Extract prefix from static route (no parameters).
+     *
+     * @param  string  $pattern
+     *
+     * @return string
+     * @internal
+     */
+    private function extractPrefixFromStatic(string $pattern): string
+    {
+        $last_slash = strrpos($pattern, '/');
+
+        if ($last_slash === false || $last_slash === 0) {
+            return '/';
+        }
+
+        return substr($pattern, 0, $last_slash);
+    }
+
+    /**
+     * Extract prefix before parameter placeholder.
+     *
+     * @param  string  $pattern
+     * @param  int     $param_pos  Position of first '{'
+     *
+     * @return string
+     * @internal
+     */
+    private function extractPrefixBeforeParam(string $pattern, int $param_pos): string
+    {
+        $prefix = substr($pattern, 0, $param_pos);
         $last_slash = strrpos($prefix, '/');
 
         if ($last_slash === false) {
@@ -1126,7 +1196,6 @@ class Router
         }
 
         $result = substr($prefix, 0, $last_slash);
-
         return $result === '' ? '/' : $result;
     }
 
@@ -1230,37 +1299,70 @@ class Router
     }
 
     /**
-     * Wrap PSR-15 middleware.
+     * Create PSR-7 server request from globals.
+     *
+     * @return \Psr\Http\Message\ServerRequestInterface
+     * @internal
+     */
+    private function createPsrRequest()
+    {
+        $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
+        $creator = new \Nyholm\Psr7Server\ServerRequestCreator(
+            $psr17Factory,
+            $psr17Factory,
+            $psr17Factory,
+            $psr17Factory
+        );
+        return $creator->fromGlobals();
+    }
+
+    /**
+     * Send PSR-7 response to output.
+     *
+     * @param  \Psr\Http\Message\ResponseInterface  $response
+     *
+     * @return void
+     * @internal
+     */
+    private function sendPsrResponse($response): void
+    {
+        http_response_code($response->getStatusCode());
+        foreach ($response->getHeaders() as $name => $values) {
+            foreach ($values as $value) {
+                header("$name: $value", false);
+            }
+        }
+        echo $response->getBody();
+    }
+
+    /**
+     * Wrap PSR-15 middleware (handles both legacy and compiled).
      *
      * @param  mixed     $middleware
      * @param  callable  $next
+     * @param  bool      $compiled  Whether this is for compiled pipeline
      *
      * @return callable
      * @internal
      */
-    private function wrapPsr15($middleware, callable $next): callable
+    private function wrapPsr15($middleware, callable $next, bool $compiled = false): callable
     {
-        return function () use ($middleware, $next) {
-            // Create PSR-7 request using nyholm/psr7-server
-            $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
-            $creator = new \Nyholm\Psr7Server\ServerRequestCreator(
-                $psr17Factory,
-                $psr17Factory,
-                $psr17Factory,
-                $psr17Factory
-            );
-            $request = $creator->fromGlobals();
+        return function (...$args) use ($middleware, $next, $compiled) {
+            $request = $this->createPsrRequest();
 
             // Instantiate if class name
             $middleware = is_string($middleware) ? new $middleware() : $middleware;
 
-            // Execute PSR-15 middleware
+            // Create handler
+            $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
             $handler = new \Zerotoprod\WebFramework\Http\RequestHandler(
-                function ($request) use ($next, $psr17Factory) {
+                function ($request) use ($next, $psr17Factory, $args, $compiled) {
                     ob_start();
-                    $next();
-                    $body = ob_get_clean();
 
+                    // Pass args differently for compiled vs legacy
+                    $compiled ? $next(...$args) : $next();
+
+                    $body = ob_get_clean();
                     return $psr17Factory->createResponse(200)->withBody(
                         $psr17Factory->createStream($body)
                     );
@@ -1268,32 +1370,34 @@ class Router
             );
 
             $response = $middleware->process($request, $handler);
-
-            // Send response
-            http_response_code($response->getStatusCode());
-            foreach ($response->getHeaders() as $name => $values) {
-                foreach ($values as $value) {
-                    header("$name: $value", false);
-                }
-            }
-            echo $response->getBody();
+            $this->sendPsrResponse($response);
         };
     }
 
     /**
-     * Wrap variadic middleware (legacy).
+     * Wrap variadic middleware (handles both legacy and compiled).
      *
      * @param  mixed     $middleware
      * @param  callable  $next
+     * @param  bool      $compiled  Whether this is for compiled pipeline
      *
      * @return callable
      * @internal
      */
-    private function wrapVariadic($middleware, callable $next): callable
+    private function wrapVariadic($middleware, callable $next, bool $compiled = false): callable
     {
-        return function () use ($middleware, $next) {
+        return function (...$args) use ($middleware, $next, $compiled) {
             $middleware = is_string($middleware) ? new $middleware() : $middleware;
-            $middleware($next, ...$this->args);
+
+            if ($compiled) {
+                // Compiled version: $args contains [$params, $routerArgs]
+                $middleware(function () use ($next, $args) {
+                    $next(...$args);
+                }, ...$args[1]); // Pass router args to middleware
+            } else {
+                // Legacy version: called without params
+                $middleware($next, ...$this->args);
+            }
         };
     }
 
@@ -1347,44 +1451,7 @@ class Router
      */
     private function wrapPsr15Compiled($middleware, callable $next): callable
     {
-        return function ($params, $args) use ($middleware, $next) {
-            // Create PSR-7 request using nyholm/psr7-server
-            $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
-            $creator = new \Nyholm\Psr7Server\ServerRequestCreator(
-                $psr17Factory,
-                $psr17Factory,
-                $psr17Factory,
-                $psr17Factory
-            );
-            $request = $creator->fromGlobals();
-
-            // Instantiate if class name
-            $middleware = is_string($middleware) ? new $middleware() : $middleware;
-
-            // Execute PSR-15 middleware
-            $handler = new \Zerotoprod\WebFramework\Http\RequestHandler(
-                function ($request) use ($next, $psr17Factory, $params, $args) {
-                    ob_start();
-                    $next($params, $args);
-                    $body = ob_get_clean();
-
-                    return $psr17Factory->createResponse(200)->withBody(
-                        $psr17Factory->createStream($body)
-                    );
-                }
-            );
-
-            $response = $middleware->process($request, $handler);
-
-            // Send response
-            http_response_code($response->getStatusCode());
-            foreach ($response->getHeaders() as $name => $values) {
-                foreach ($values as $value) {
-                    header("$name: $value", false);
-                }
-            }
-            echo $response->getBody();
-        };
+        return $this->wrapPsr15($middleware, $next, true);
     }
 
     /**
@@ -1398,12 +1465,7 @@ class Router
      */
     private function wrapVariadicCompiled($middleware, callable $next): callable
     {
-        return function ($params, $args) use ($middleware, $next) {
-            $middleware = is_string($middleware) ? new $middleware() : $middleware;
-            $middleware(function () use ($next, $params, $args) {
-                $next($params, $args);
-            }, ...$args);
-        };
+        return $this->wrapVariadic($middleware, $next, true);
     }
 
     /**
@@ -1478,6 +1540,19 @@ class Router
         }
 
         return true;
+    }
+
+    /**
+     * Finalize cache writing after dispatch if needed.
+     *
+     * @return void
+     * @internal
+     */
+    private function finalizeCacheIfNeeded(): void
+    {
+        if ($this->auto_cache_enabled && $this->shouldWriteCache()) {
+            $this->writeCache();
+        }
     }
 
     /**
