@@ -4,19 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A simple PHP web framework library that provides environment variable loading and management capabilities. The package supports PHP 7.1+ and is designed for broad compatibility across multiple PHP versions.
+A PHP web framework library providing HTTP routing and environment management. The package supports PHP 7.1+ with broad multi-version compatibility.
+
+Core features:
+- **HTTP Routing**: High-performance router with three-level indexing (static → prefix → method)
+- **Environment Management**: `.env` file loading with immutable bindings
+- **Middleware**: Dual support for PSR-15 and legacy variadic middleware
+- **Route Caching**: Production-optimized serialization with automatic cache management
 
 ## Architecture
 
-### Core Component: WebFramework Class
+### Router System (`src/Router.php`)
 
-The main `WebFramework` class (`src/WebFramework.php`) provides a fluent interface for:
-- Setting the application base path
-- Loading environment variables from `.env` files
-- Binding environment variables to PHP's global scope (`$_ENV` and `putenv()`)
-- Immutable environment variable binding (won't overwrite existing values)
+The `Router` class is the primary component, providing:
 
-The class uses method chaining and accepts optional callables for customizing behavior:
+**Three-Level Route Indexing:**
+1. **Static Index** (O(1)): Hash map `method:path` → Route for exact matches
+2. **Prefix Index** (O(1) + O(n)): Hash map `method:prefix` → [Routes] for dynamic routes with common prefixes
+3. **Method Index** (O(n)): Hash map `method` → [Routes] fallback for complex patterns
+
+**Key Features:**
+- RESTful resource routes via `resource()` method
+- Route groups with prefix and middleware stacking
+- Named routes for URL generation via `route()` method
+- Automatic environment-aware caching via `autoCache()`
+- Constraint validation (inline: `{id:\d+}` or fluent: `where()`)
+- Fallback handlers for 404 responses
+
+**Route Compilation:**
+- `RouteCompiler` (`src/RouteCompiler.php`): Converts patterns to regex with parameter extraction
+- `Route` (`src/Route.php`): Value object containing compiled route metadata and cached middleware pipeline
+- Middleware pipelines are pre-compiled and stored on `Route` objects for performance
+
+**Middleware System:**
+- PSR-15 middleware: `RequestHandler` (`src/Http/RequestHandler.php`) wraps callables for PSR-15 compatibility
+- Variadic middleware: Legacy `function($next, ...$context)` format
+- Both types can be mixed freely (router automatically detects and wraps)
+- Global middleware applies to all routes, per-route middleware is route-specific
+- Nested groups stack middleware and prefixes
+
+### WebFramework Class (`src/WebFramework.php`)
+
+Environment and application bootstrapping:
 ```php
 $framework = new WebFramework($basePath);
 $framework
@@ -26,23 +55,22 @@ $framework
     ->bindEnv();
 ```
 
-### Plugin System
-
-The framework uses a plugin-based architecture with two first-party plugins:
-
-1. **EnvParser** (`src/Plugins/EnvParser.php`) - Parses `.env` files into associative arrays
-2. **EnvBinderImmutable** (`src/Plugins/EnvBinderImmutable.php`) - Binds variables without overwriting existing ones
-
-Custom plugins can be provided as callables to `setEnvParser()` and `setEnvBinder()`.
+**EnvBinderImmutable** (`src/Plugins/EnvBinderImmutable.php`):
+- Binds environment variables to `$_ENV` and `putenv()`
+- Immutable: Never overwrites existing environment variables
+- Used by `autoCache()` to detect production vs development environments
 
 ### Dependencies
 
-- **zero-to-prod/phpdotenv**: Local path dependency (`../phpdotenv`) for `.env` file parsing
-- **zero-to-prod/package-helper**: Used by the documentation publishing bin script
+- **zero-to-prod/phpdotenv**: Local path dependency for `.env` parsing
+- **zero-to-prod/package-helper**: Documentation publishing
+- **psr/http-server-middleware**: PSR-15 middleware interface
+- **nyholm/psr7**: PSR-7 HTTP message implementation
+- **nyholm/psr7-server**: PSR-7 server request creation
 
 ### Multi-Version PHP Support
 
-This project is designed to work across PHP 7.1 through 8.5. Each PHP version has isolated vendor directories (`.vendor/php7.1/`, `.vendor/php8.5/`, etc.) to prevent version conflicts.
+Designed for PHP 7.1-8.5 compatibility. Each version has isolated vendor directories (`.vendor/php7.1/`, `.vendor/php8.5/`) to prevent conflicts.
 
 ## Development Commands
 
@@ -155,13 +183,28 @@ vendor/bin/zero-to-prod-web-framework /path/to/docs
 
 This can be automated via Composer scripts (see README.md).
 
-## Future Development
+## Working with Router Code
 
-Two routing design proposals exist in the repository:
-- `ROUTING_PROPOSAL.md` - Method-based fluent interface approach
-- `CACHEABLE_ROUTING_DESIGN.md` - Performance-focused cacheable routing system
+### Router Simplification Principles
 
-These documents outline potential future features for request/response handling and routing.
+The Router has undergone extensive simplification (see plan at `~/.claude/plans/flickering-napping-prism.md`). When modifying Router code:
+
+1. **Extract helper methods**: Prefer small, focused internal methods over inline duplication
+2. **Use compound booleans**: Consolidate multiple if-blocks into single boolean expressions with guard clauses
+3. **Strategy pattern for type dispatch**: Separate execution paths (array actions, invokable, callable) into distinct methods
+4. **Centralize pattern construction**: Use helper methods for repeated string patterns (index keys, regex, placeholders)
+5. **Index efficiency**: Maintain O(1) lookups where possible (static index, prefix index, pattern index)
+
+**Current test coverage**: 181 tests with 282 assertions. All changes must maintain full backward compatibility.
+
+### Route Caching Behavior
+
+- `isCacheable()`: Returns false if any route or middleware uses closures
+- `compile()`: Serializes routes, global middleware, and named routes
+- `loadCompiled()`: Deserializes and restores all route state
+- `autoCache()`: Automatically manages cache based on `APP_ENV` (default: production only)
+
+Closures cannot be cached due to PHP serialization limitations.
 
 ## Key Technical Details
 
@@ -169,5 +212,6 @@ These documents outline potential future features for request/response handling 
 - **Minimum PHP**: 7.1
 - **PSR-4 Autoloading**: `src/` maps to `Zerotoprod\WebFramework\`
 - **Vendor Directories**: Isolated per PHP version in `.vendor/php{VERSION}/`
-- **Dependency**: Local path repository to `../phpdotenv` package
+- **Local Dependencies**: `../phpdotenv` via Composer path repository
 - **Bootstrap Script**: `dock` - Bash wrapper for Docker Compose commands
+- **Test Count**: 181 tests, 282 assertions across all PHP versions

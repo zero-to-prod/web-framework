@@ -305,7 +305,7 @@ $routes->dispatch();
 
 #### Supported HTTP Methods
 
-All HTTP method helpers return a `PendingRoute` instance for fluent chaining:
+All HTTP method helpers return the `Router` instance for fluent chaining:
 
 ```php
 $routes->get('/resource', $action);      // GET requests
@@ -317,11 +317,11 @@ $routes->options('/resource', $action);  // OPTIONS requests
 $routes->head('/resource', $action);     // HEAD requests
 ```
 
-Each method returns a `PendingRoute` object that allows you to chain additional configuration methods like `where()` and `name()`, or continue defining more routes.
+Each method returns the `Router` instance, allowing you to chain additional configuration methods like `where()`, `middleware()`, and `name()`, or continue defining more routes.
 
 #### Action Types
 
-Routes support four types of actions:
+Routes support three types of actions:
 
 ##### 1. Closures
 
@@ -348,7 +348,7 @@ $routes->get('/users', [UserController::class, 'index']);
 $routes->get('/users/{id}', [UserController::class, 'show']);
 ```
 
-##### 3. Invokeable Controllers
+##### 3. Invokable Controllers
 
 ```php
 class HomeController {
@@ -360,11 +360,43 @@ class HomeController {
 $routes->get('/', HomeController::class);
 ```
 
-##### 4. String Responses
+#### RESTful Resource Routes
+
+Quickly define standard CRUD routes with the `resource()` method:
 
 ```php
-$routes->get('/status', 'OK');
-$routes->get('/version', 'v1.0.0');
+// Generate all 7 RESTful routes
+$routes->resource('posts', PostController::class);
+
+// Generates:
+// GET    /posts           → PostController::index()    [posts.index]
+// GET    /posts/create    → PostController::create()   [posts.create]
+// POST   /posts           → PostController::store()    [posts.store]
+// GET    /posts/{id}      → PostController::show()     [posts.show]
+// GET    /posts/{id}/edit → PostController::edit()     [posts.edit]
+// PUT    /posts/{id}      → PostController::update()   [posts.update]
+// DELETE /posts/{id}      → PostController::destroy()  [posts.destroy]
+```
+
+**Limiting actions:**
+
+```php
+// Only include specific actions
+$routes->resource('photos', PhotoController::class, ['only' => ['index', 'show']]);
+
+// Exclude specific actions
+$routes->resource('users', UserController::class, ['except' => ['destroy']]);
+```
+
+**Named routes:**
+All resource routes are automatically named using the pattern `{resource}.{action}`:
+
+```php
+$routes->resource('users', UserController::class);
+
+// Generate URLs
+$url = $routes->route('users.show', ['id' => 123]); // /users/123
+$url = $routes->route('users.edit', ['id' => 456]); // /users/456/edit
 ```
 
 #### Dynamic Routes with Parameters
@@ -475,7 +507,7 @@ $routes->get('/posts/{page?}', [PostController::class, 'index'])
 
 #### Route Naming
 
-Name routes for URL generation and identification:
+Name routes for URL generation:
 
 ```php
 $routes->get('/users/{id}', [UserController::class, 'show'])
@@ -483,9 +515,89 @@ $routes->get('/users/{id}', [UserController::class, 'show'])
 
 $routes->post('/users', [UserController::class, 'create'])
     ->name('users.create');
+
+// Generate URLs from named routes
+$url = $routes->route('users.show', ['id' => 123]);
+// Returns: /users/123
 ```
 
-Route names are stored in the `HttpRoute` object and can be accessed when needed. The routing system automatically handles route matching during dispatch.
+Route names enable URL generation while keeping route definitions centralized.
+
+#### Route Groups
+
+Organize routes with shared attributes using `prefix()` and `group()`:
+
+##### Basic Prefix Groups
+
+```php
+// Apply prefix to multiple routes
+$routes->prefix('admin')
+    ->group(function ($r) {
+        $r->get('/users', [AdminController::class, 'users']);     // /admin/users
+        $r->get('/posts', [AdminController::class, 'posts']);     // /admin/posts
+        $r->get('/settings', [AdminController::class, 'settings']); // /admin/settings
+    });
+```
+
+##### Middleware Groups
+
+```php
+// Apply middleware to multiple routes
+$routes->middleware(AuthMiddleware::class)
+    ->group(function ($r) {
+        $r->get('/dashboard', [DashboardController::class, 'index']);
+        $r->get('/profile', [ProfileController::class, 'show']);
+    });
+```
+
+##### Combined Prefix and Middleware
+
+```php
+// Apply both prefix and middleware
+$routes->prefix('api')
+    ->middleware([AuthMiddleware::class, RateLimitMiddleware::class])
+    ->group(function ($r) {
+        $r->get('/users', [ApiController::class, 'users']);
+        $r->post('/users', [ApiController::class, 'createUser']);
+    });
+```
+
+##### Nested Groups
+
+Groups can be nested to create hierarchical route structures:
+
+```php
+// Nested prefix stacking
+$routes->prefix('api')
+    ->group(function ($r) {
+        $r->prefix('v1')
+            ->group(function ($r) {
+                $r->get('/users', [ApiV1Controller::class, 'users']); // /api/v1/users
+                $r->get('/posts', [ApiV1Controller::class, 'posts']); // /api/v1/posts
+            });
+
+        $r->prefix('v2')
+            ->group(function ($r) {
+                $r->get('/users', [ApiV2Controller::class, 'users']); // /api/v2/users
+            });
+    });
+
+// Nested middleware stacking
+$routes->middleware(LoggingMiddleware::class)
+    ->group(function ($r) {
+        $r->middleware(AuthMiddleware::class)
+            ->group(function ($r) {
+                // Both LoggingMiddleware and AuthMiddleware apply
+                $r->get('/admin', [AdminController::class, 'index']);
+            });
+    });
+```
+
+**How groups work:**
+- `prefix()` sets the prefix for the next `group()` call
+- `middleware()` sets middleware for the next `group()` call
+- Nested groups stack both prefixes and middleware
+- Groups automatically clean up their state after execution
 
 #### Additional Arguments (Dependency Injection)
 
@@ -583,7 +695,7 @@ Middleware receives a `$next` callable followed by any arguments passed to `Rout
 use Zerotoprod\WebFramework\Router;
 
 $routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
-    ->middleware(function ($next, $server) {
+    ->globalMiddleware(function ($next, $server) {
         // Pre-action logic
         error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
 
@@ -598,14 +710,48 @@ $routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SER
 $routes->dispatch();
 ```
 
+##### Middleware Types
+
+The router supports two middleware types:
+
+1. **PSR-15 Middleware** (implements `Psr\Http\Server\MiddlewareInterface`)
+2. **Variadic Middleware** (legacy callable format)
+
+Both types can be used interchangeably and mixed freely.
+
 ##### Middleware Signature
 
-All middleware must be callable with this signature:
+**Variadic Middleware (Legacy):**
 
 ```php
 function ($next, ...$context) {
     // $next is a closure to continue the middleware chain
     // $context contains all arguments passed to Router::for()
+}
+```
+
+**PSR-15 Middleware (Recommended):**
+
+```php
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+
+class MyMiddleware implements MiddlewareInterface
+{
+    public function process(
+        ServerRequestInterface $request,
+        RequestHandlerInterface $handler
+    ): ResponseInterface {
+        // Pre-action logic
+
+        // Continue to next middleware/action
+        $response = $handler->handle($request);
+
+        // Post-action logic
+        return $response;
+    }
 }
 ```
 
@@ -631,18 +777,18 @@ Register middleware that applies to all routes:
 
 ```php
 // Single middleware
-$routes->middleware(LoggingMiddleware::class);
+$routes->globalMiddleware(LoggingMiddleware::class);
 
 // Multiple middleware (executes in order)
-$routes->middleware([
+$routes->globalMiddleware([
     AuthenticationMiddleware::class,
     CorsMiddleware::class,
     LoggingMiddleware::class
 ]);
 
 // Chain middleware registration
-$routes->middleware(AuthMiddleware::class)
-       ->middleware(LogMiddleware::class);
+$routes->globalMiddleware(AuthMiddleware::class)
+       ->globalMiddleware(LogMiddleware::class);
 ```
 
 ##### Per-Route Middleware
@@ -699,7 +845,7 @@ $routes->dispatch();
 **Closure Middleware:**
 
 ```php
-$routes->middleware(function ($next, $server) {
+$routes->globalMiddleware(function ($next, $server) {
     $start = microtime(true);
 
     // Continue to action
@@ -709,6 +855,8 @@ $routes->middleware(function ($next, $server) {
     $duration = microtime(true) - $start;
     error_log("{$server['REQUEST_METHOD']} {$server['REQUEST_URI']} - {$duration}s");
 });
+
+$routes->get('/users', [UserController::class, 'index']);
 
 $routes->dispatch();
 ```
@@ -725,7 +873,7 @@ Middleware executes in this order:
 
 ```php
 $routes = Router::for('GET', '/test')
-    ->middleware(function ($next) {
+    ->globalMiddleware(function ($next) {
         echo "1. Global before\n";
         $next();
         echo "6. Global after\n";
@@ -847,7 +995,7 @@ $database = new Database();
 $logger = new Logger();
 
 $routes = Router::for('GET', '/users', $_SERVER, $database, $logger)
-    ->middleware(UserMiddleware::class)
+    ->globalMiddleware(UserMiddleware::class)
     ->get('/users', [UserController::class, 'index']);
 
 $routes->dispatch();
@@ -895,15 +1043,17 @@ class AdminMiddleware
 }
 
 // Define routes with middleware
-$routes = Router::for()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
     // Global middleware for all routes
-    ->middleware([
+    ->globalMiddleware([
         LogMiddleware::class,
         AuthMiddleware::class
     ])
 
     // Public routes (global middleware still applies)
-    ->get('/api/status', 'OK')
+    ->get('/api/status', function() {
+        echo 'OK';
+    })
 
     // Protected admin routes
     ->get('/admin/users', [AdminController::class, 'users'])
@@ -939,8 +1089,8 @@ Just like routes, **middleware with closures cannot be cached** because PHP clos
 ```php
 // ✅ Can be cached (all middleware are class names)
 $routes = Router::for('', '')
-    ->middleware(AuthMiddleware::class)
-    ->middleware(LoggingMiddleware::class)
+    ->globalMiddleware(AuthMiddleware::class)
+    ->globalMiddleware(LoggingMiddleware::class)
     ->get('/users', [UserController::class, 'index'])
         ->middleware(RateLimitMiddleware::class);
 
@@ -950,7 +1100,7 @@ if ($routes->isCacheable()) {
 
 // ❌ Cannot be cached (contains closure middleware)
 $routes = Router::for('GET', '/users', $_SERVER)
-    ->middleware(function ($next, $server) {
+    ->globalMiddleware(function ($next, $server) {
         // Closure cannot be serialized
         echo "Logging...";
         $next();
@@ -986,8 +1136,7 @@ Compile routes for production performance:
 
 ✅ **Cacheable route types:**
 - Controller arrays: `[UserController::class, 'index']`
-- Invokeable classes: `UserController::class`
-- String responses: `'Hello World'`
+- Invokable classes: `UserController::class`
 - Class-based middleware: `AuthMiddleware::class`
 
 ❌ **Non-cacheable route types:**
@@ -1080,16 +1229,63 @@ $routes->dispatch();
 - **With caching:** Single deserialization operation (~20-50μs)
 - **Speed improvement:** **5-20x faster** depending on route complexity
 
+##### Automatic Caching (autoCache)
+
+The `autoCache()` method provides environment-aware automatic route caching:
+
+```php
+use Zerotoprod\WebFramework\Router;
+
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
+    ->get('/users', [UserController::class, 'index'])
+    ->get('/users/{id}', [UserController::class, 'show'])
+    ->autoCache(__DIR__ . '/cache/routes.cache');
+
+// Automatically caches on first request in production environment
+// Automatically loads from cache on subsequent requests
+$routes->dispatch();
+```
+
+**How it works:**
+1. In **production** environment (`APP_ENV=production`):
+   - First request: Builds routes and writes cache file
+   - Subsequent requests: Loads routes from cache automatically
+2. In **local/development** environments:
+   - Cache is never written or read
+   - Routes are built fresh on every request
+
+**Custom environment configuration:**
+
+```php
+// Use custom environment variable
+$routes->autoCache(
+    'cache/routes.cache',
+    'DEPLOY_ENV',           // Custom env var (default: APP_ENV)
+    ['staging', 'production'] // Cache in these environments (default: ['production'])
+);
+```
+
+**Benefits:**
+- No manual cache management needed
+- Automatically detects environment
+- Creates cache directory if needed
+- Safe for development (never caches in local)
+- Production-optimized (automatic cache usage)
+
 #### Method Chaining
 
-Routes support fluent method chaining through the `PendingRoute` class:
+Routes support fluent method chaining:
 
 ```php
 use Zerotoprod\WebFramework\Router;
 
 $routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
-    ->get('/', 'Home Page')
-    ->get('/about', 'About Us')
+    ->get('/', function() {
+        echo 'Home Page';
+    })
+    ->get('/about', function() {
+        echo 'About Us';
+    })
     ->get('/users/{id:\d+}', [UserController::class, 'show'])
         ->name('users.show')
     ->post('/users', [UserController::class, 'create'])
@@ -1103,10 +1299,10 @@ $routes->dispatch();
 ```
 
 **How it works:**
-- HTTP methods (`get()`, `post()`, etc.) return a `PendingRoute` instance
-- `PendingRoute` proxies HTTP methods back to `Router`, allowing continuous chaining
-- Configuration methods (`where()`, `name()`, `middleware()`) operate on `PendingRoute` and return self
-- Routes are automatically finalized when you define the next route or call a terminal method (`dispatch()`, `fallback()`)
+- All HTTP methods (`get()`, `post()`, etc.) return the `Router` instance for chaining
+- Configuration methods (`where()`, `name()`, `middleware()`) also return the `Router` instance
+- The router tracks the last defined route internally to apply configurations
+- Routes are stored immediately when defined
 
 This allows you to:
 1. Define routes consecutively: `->get()->get()->post()`
@@ -1156,29 +1352,41 @@ $routes->get('/users/{id}', function ($params) {
 
 #### Performance Characteristics
 
-**Static Routes:** Hash map lookups for **O(1) constant-time performance**
+The router uses a **three-level indexing system** for optimal performance:
 
-| Number of Static Routes | Lookup Time | Performance  |
-|------------------------|-------------|--------------|
-| 10 routes              | 1 lookup    | **Constant** |
-| 100 routes             | 1 lookup    | **Constant** |
-| 1,000 routes           | 1 lookup    | **Constant** |
+**Level 1: Static Index (O(1))**
+- Hash map: `method:path` → Route
+- Perfect for exact path matches
+- Most common case, fastest lookup
 
-**Dynamic Routes:** Regex matching for **O(n) linear performance**
+**Level 2: Prefix Index (O(1) + O(n))**
+- Hash map: `method:prefix` → [Routes]
+- Groups dynamic routes by common prefix
+- Dramatically reduces routes to check for patterns like `/users/{id}`, `/posts/{slug}`
 
-| Number of Dynamic Routes | Worst Case  | Performance |
-|-------------------------|-------------|-------------|
-| 10 routes               | 10 checks   | **Linear**  |
-| 50 routes               | 50 checks   | **Linear**  |
+**Level 3: Method Index (O(n))**
+- Hash map: `method` → [Routes]
+- Fallback for complex dynamic routes without common prefixes
+- Only checked if levels 1 and 2 don't match
+
+**Performance Table:**
+
+| Route Type | Example | Lookup | Performance |
+|-----------|---------|--------|-------------|
+| Static | `/users` | Level 1 | O(1) - Hash lookup |
+| Dynamic with prefix | `/users/{id}` | Level 2 | O(1) + O(n small) |
+| Dynamic no prefix | `/{tenant}/{resource}` | Level 3 | O(n) - Method filtered |
 
 **Dispatch Order:**
-1. Check static routes first (O(1)) - **Most common case, fastest**
-2. If no match, check dynamic routes (O(n)) - **RESTful APIs with parameters**
-3. If still no match, execute fallback handler
+1. **Static index** (O(1)) - Exact matches like `/users`, `/about`
+2. **Prefix index** (O(1) + O(n small)) - Patterns like `/users/{id}`, `/api/posts/{slug}`
+3. **Method index** (O(n)) - Complex patterns, routes without common prefixes
+4. **Fallback handler** - If no route matches
 
 **Best Practices:**
-- Use static routes whenever possible for hot paths
-- Keep dynamic routes under 50 for optimal performance
+- Use static routes for hot paths (dashboards, landing pages)
+- Group related dynamic routes with common prefixes (`/api/*`, `/admin/*`)
+- Keep total routes under 500 for optimal prefix indexing
 - Cache routes in production for best performance
 
 #### Complete Example
