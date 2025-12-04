@@ -305,7 +305,7 @@ $routes->dispatch();
 
 #### Supported HTTP Methods
 
-All HTTP method helpers return a `PendingRoute` instance for fluent chaining:
+All HTTP method helpers return the `Router` instance for fluent chaining:
 
 ```php
 $routes->get('/resource', $action);      // GET requests
@@ -317,11 +317,11 @@ $routes->options('/resource', $action);  // OPTIONS requests
 $routes->head('/resource', $action);     // HEAD requests
 ```
 
-Each method returns a `PendingRoute` object that allows you to chain additional configuration methods like `where()` and `name()`, or continue defining more routes.
+Each method returns the `Router` instance, allowing you to chain additional configuration methods like `where()`, `middleware()`, and `name()`, or continue defining more routes.
 
 #### Action Types
 
-Routes support four types of actions:
+Routes support three types of actions:
 
 ##### 1. Closures
 
@@ -348,7 +348,7 @@ $routes->get('/users', [UserController::class, 'index']);
 $routes->get('/users/{id}', [UserController::class, 'show']);
 ```
 
-##### 3. Invokeable Controllers
+##### 3. Invokable Controllers
 
 ```php
 class HomeController {
@@ -358,13 +358,6 @@ class HomeController {
 }
 
 $routes->get('/', HomeController::class);
-```
-
-##### 4. String Responses
-
-```php
-$routes->get('/status', 'OK');
-$routes->get('/version', 'v1.0.0');
 ```
 
 #### Dynamic Routes with Parameters
@@ -485,7 +478,7 @@ $routes->post('/users', [UserController::class, 'create'])
     ->name('users.create');
 ```
 
-Route names are stored in the `HttpRoute` object and can be accessed when needed. The routing system automatically handles route matching during dispatch.
+Route names are stored in the `Route` object and can be accessed when needed. The routing system automatically handles route matching during dispatch.
 
 #### Additional Arguments (Dependency Injection)
 
@@ -583,7 +576,7 @@ Middleware receives a `$next` callable followed by any arguments passed to `Rout
 use Zerotoprod\WebFramework\Router;
 
 $routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
-    ->middleware(function ($next, $server) {
+    ->globalMiddleware(function ($next, $server) {
         // Pre-action logic
         error_log("Request: {$server['REQUEST_METHOD']} {$server['REQUEST_URI']}");
 
@@ -631,18 +624,18 @@ Register middleware that applies to all routes:
 
 ```php
 // Single middleware
-$routes->middleware(LoggingMiddleware::class);
+$routes->globalMiddleware(LoggingMiddleware::class);
 
 // Multiple middleware (executes in order)
-$routes->middleware([
+$routes->globalMiddleware([
     AuthenticationMiddleware::class,
     CorsMiddleware::class,
     LoggingMiddleware::class
 ]);
 
 // Chain middleware registration
-$routes->middleware(AuthMiddleware::class)
-       ->middleware(LogMiddleware::class);
+$routes->globalMiddleware(AuthMiddleware::class)
+       ->globalMiddleware(LogMiddleware::class);
 ```
 
 ##### Per-Route Middleware
@@ -699,7 +692,7 @@ $routes->dispatch();
 **Closure Middleware:**
 
 ```php
-$routes->middleware(function ($next, $server) {
+$routes->globalMiddleware(function ($next, $server) {
     $start = microtime(true);
 
     // Continue to action
@@ -709,6 +702,8 @@ $routes->middleware(function ($next, $server) {
     $duration = microtime(true) - $start;
     error_log("{$server['REQUEST_METHOD']} {$server['REQUEST_URI']} - {$duration}s");
 });
+
+$routes->get('/users', [UserController::class, 'index']);
 
 $routes->dispatch();
 ```
@@ -725,7 +720,7 @@ Middleware executes in this order:
 
 ```php
 $routes = Router::for('GET', '/test')
-    ->middleware(function ($next) {
+    ->globalMiddleware(function ($next) {
         echo "1. Global before\n";
         $next();
         echo "6. Global after\n";
@@ -847,7 +842,7 @@ $database = new Database();
 $logger = new Logger();
 
 $routes = Router::for('GET', '/users', $_SERVER, $database, $logger)
-    ->middleware(UserMiddleware::class)
+    ->globalMiddleware(UserMiddleware::class)
     ->get('/users', [UserController::class, 'index']);
 
 $routes->dispatch();
@@ -895,15 +890,17 @@ class AdminMiddleware
 }
 
 // Define routes with middleware
-$routes = Router::for()
+$routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER)
     // Global middleware for all routes
-    ->middleware([
+    ->globalMiddleware([
         LogMiddleware::class,
         AuthMiddleware::class
     ])
 
     // Public routes (global middleware still applies)
-    ->get('/api/status', 'OK')
+    ->get('/api/status', function() {
+        echo 'OK';
+    })
 
     // Protected admin routes
     ->get('/admin/users', [AdminController::class, 'users'])
@@ -939,8 +936,8 @@ Just like routes, **middleware with closures cannot be cached** because PHP clos
 ```php
 // ✅ Can be cached (all middleware are class names)
 $routes = Router::for('', '')
-    ->middleware(AuthMiddleware::class)
-    ->middleware(LoggingMiddleware::class)
+    ->globalMiddleware(AuthMiddleware::class)
+    ->globalMiddleware(LoggingMiddleware::class)
     ->get('/users', [UserController::class, 'index'])
         ->middleware(RateLimitMiddleware::class);
 
@@ -950,7 +947,7 @@ if ($routes->isCacheable()) {
 
 // ❌ Cannot be cached (contains closure middleware)
 $routes = Router::for('GET', '/users', $_SERVER)
-    ->middleware(function ($next, $server) {
+    ->globalMiddleware(function ($next, $server) {
         // Closure cannot be serialized
         echo "Logging...";
         $next();
@@ -986,8 +983,7 @@ Compile routes for production performance:
 
 ✅ **Cacheable route types:**
 - Controller arrays: `[UserController::class, 'index']`
-- Invokeable classes: `UserController::class`
-- String responses: `'Hello World'`
+- Invokable classes: `UserController::class`
 - Class-based middleware: `AuthMiddleware::class`
 
 ❌ **Non-cacheable route types:**
@@ -1082,14 +1078,18 @@ $routes->dispatch();
 
 #### Method Chaining
 
-Routes support fluent method chaining through the `PendingRoute` class:
+Routes support fluent method chaining:
 
 ```php
 use Zerotoprod\WebFramework\Router;
 
 $routes = Router::for($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'])
-    ->get('/', 'Home Page')
-    ->get('/about', 'About Us')
+    ->get('/', function() {
+        echo 'Home Page';
+    })
+    ->get('/about', function() {
+        echo 'About Us';
+    })
     ->get('/users/{id:\d+}', [UserController::class, 'show'])
         ->name('users.show')
     ->post('/users', [UserController::class, 'create'])
@@ -1103,10 +1103,10 @@ $routes->dispatch();
 ```
 
 **How it works:**
-- HTTP methods (`get()`, `post()`, etc.) return a `PendingRoute` instance
-- `PendingRoute` proxies HTTP methods back to `Router`, allowing continuous chaining
-- Configuration methods (`where()`, `name()`, `middleware()`) operate on `PendingRoute` and return self
-- Routes are automatically finalized when you define the next route or call a terminal method (`dispatch()`, `fallback()`)
+- All HTTP methods (`get()`, `post()`, etc.) return the `Router` instance for chaining
+- Configuration methods (`where()`, `name()`, `middleware()`) also return the `Router` instance
+- The router tracks the last defined route internally to apply configurations
+- Routes are stored immediately when defined
 
 This allows you to:
 1. Define routes consecutively: `->get()->get()->post()`

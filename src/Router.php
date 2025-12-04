@@ -17,6 +17,25 @@ use RuntimeException;
  * - Build indices during registration, not during dispatch
  * - Reduced iterations through route matching
  *
+ * Usage example:
+ * <code>
+ * $router = Router::for('GET', '/users/123')
+ *     ->get('/users/{id}', [UserController::class, 'show'])
+ *     ->where('id', '\d+')
+ *     ->name('user.show')
+ *     ->middleware(AuthMiddleware::class);
+ *
+ * $router->post('/users', [UserController::class, 'store'])
+ *     ->middleware([ValidationMiddleware::class, AuthMiddleware::class]);
+ *
+ * $router->fallback(function() {
+ *     http_response_code(404);
+ *     echo 'Not Found';
+ * });
+ *
+ * $router->dispatch();
+ * </code>
+ *
  * @link https://github.com/zero-to-prod/web-framework
  */
 class Router
@@ -56,6 +75,9 @@ class Router
 
     /** @var bool Whether indices have been built */
     private $indices_built = false;
+
+    /** @var string Error message for methods that require a route to be defined first */
+    private const NO_ROUTE_DEFINED = 'No route to configure. Call get/post/etc first.';
 
     /**
      * @link https://github.com/zero-to-prod/web-framework
@@ -271,7 +293,7 @@ class Router
     public function middleware($middleware): self
     {
         if ($this->last_route === null) {
-            throw new RuntimeException('No route to add middleware to. Call get/post/etc first, or use globalMiddleware() for global middleware.');
+            throw new RuntimeException(self::NO_ROUTE_DEFINED.' Use globalMiddleware() for global middleware.');
         }
 
         $this->last_route = $this->last_route->withMiddleware($middleware);
@@ -283,13 +305,17 @@ class Router
     /**
      * Dispatch a request with triple-level optimization.
      *
+     * Executes the matched route action via side effects (echo, output buffering, etc.).
+     * Actions do not return values; they produce output directly. The return value
+     * indicates whether a route was matched and executed.
+     *
      * Performance improvements:
      * - O(1) static route lookup (hash map for exact matches)
      * - O(1) prefix-based filtering (check only routes with matching prefix)
      * - Single regex call per route (matchAndExtract eliminates duplicate preg_match)
      * - O(1) method filtering as fallback
      *
-     * @return bool  True if route or fallback executed
+     * @return bool  True if route or fallback executed, false if no match
      * @link https://github.com/zero-to-prod/web-framework
      */
     public function dispatch(): bool
@@ -515,10 +541,10 @@ class Router
      * @throws InvalidArgumentException  If constraint is invalid
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function where($param, $pattern = null): self
+    public function where($param, ?string $pattern = null): self
     {
         if ($this->last_route === null) {
-            throw new RuntimeException('No route to configure. Call get/post/etc first.');
+            throw new RuntimeException(self::NO_ROUTE_DEFINED);
         }
 
         // Validate constraints
@@ -543,6 +569,7 @@ class Router
      * @param  string  $pattern  Regex pattern
      *
      * @throws InvalidArgumentException  If invalid
+     * @internal
      */
     private function validateConstraint(string $param, string $pattern): void
     {
@@ -564,7 +591,7 @@ class Router
     public function name(string $name): self
     {
         if ($this->last_route === null) {
-            throw new RuntimeException('No route to configure. Call get/post/etc first.');
+            throw new RuntimeException(self::NO_ROUTE_DEFINED);
         }
 
         $this->last_route = $this->last_route->withName($name);
@@ -583,6 +610,7 @@ class Router
      * @return void
      *
      * @throws InvalidArgumentException  If action is invalid
+     * @internal
      */
     private function addRoute(string $method, string $uri, $action): void
     {
@@ -617,6 +645,7 @@ class Router
      * when defining many routes.
      *
      * @param  Route  $route  Route to store
+     * @internal
      */
     private function storeRoute(Route $route): void
     {
@@ -631,6 +660,7 @@ class Router
      * rather than updating them after each route modification.
      *
      * @return void
+     * @internal
      */
     private function buildIndices(): void
     {
@@ -669,10 +699,14 @@ class Router
     /**
      * Replace the last stored route with an updated version.
      *
-     * Simplified implementation that only updates routes array and pattern index.
-     * Other indices are rebuilt lazily on dispatch.
+     * Performance optimization: This method only updates the routes array and pattern
+     * index immediately. The static_index, method_index, and prefix_index are marked
+     * as stale (indices_built = false) and will be rebuilt lazily on the next dispatch()
+     * call. This approach avoids expensive index rebuilding during route definition when
+     * chaining multiple configuration methods like where(), name(), and middleware().
      *
      * @param  Route  $route  Updated route to replace
+     * @internal
      */
     private function replaceLastRoute(Route $route): void
     {
@@ -697,6 +731,7 @@ class Router
      * @param  string  $uri  Request URI
      *
      * @return string  Path without query string
+     * @internal
      */
     private function stripQueryString(string $uri): string
     {
@@ -718,6 +753,7 @@ class Router
      * @param  string  $pattern  Route pattern or path
      *
      * @return string  Static prefix (no trailing slash except for root)
+     * @internal
      */
     private function extractPrefix(string $pattern): string
     {
@@ -762,6 +798,7 @@ class Router
      * @param  array  $params  Route parameters extracted from URI
      *
      * @throws InvalidArgumentException  If action type is invalid
+     * @internal
      * @link https://github.com/zero-to-prod/web-framework
      */
     private function execute($action, array $params): void
@@ -796,6 +833,7 @@ class Router
      * @param  array       $params  Route parameters
      *
      * @return void
+     * @internal
      * @link https://github.com/zero-to-prod/web-framework
      */
     private function executeWithMiddleware(?Route $route, array $params): void
