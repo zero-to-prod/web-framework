@@ -3,8 +3,15 @@
 namespace Zerotoprod\WebFramework;
 
 use Closure;
+use Exception;
 use InvalidArgumentException;
+use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7Server\ServerRequestCreator;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use RuntimeException;
+use Zerotoprod\WebFramework\Http\RequestHandler;
 
 /**
  * Static facade for route collection and dispatch.
@@ -1414,7 +1421,7 @@ class Router
         }
 
         if (is_object($middleware)) {
-            return $middleware instanceof \Psr\Http\Server\MiddlewareInterface;
+            return $middleware instanceof MiddlewareInterface;
         }
 
         return false;
@@ -1423,13 +1430,13 @@ class Router
     /**
      * Create PSR-7 server request from globals.
      *
-     * @return \Psr\Http\Message\ServerRequestInterface
+     * @return ServerRequestInterface
      * @internal
      */
     private function createPsrRequest()
     {
-        $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
-        $creator = new \Nyholm\Psr7Server\ServerRequestCreator(
+        $psr17Factory = new Psr17Factory();
+        $creator = new ServerRequestCreator(
             $psr17Factory,
             $psr17Factory,
             $psr17Factory,
@@ -1441,7 +1448,7 @@ class Router
     /**
      * Send PSR-7 response to output.
      *
-     * @param  \Psr\Http\Message\ResponseInterface  $response
+     * @param  ResponseInterface  $response
      *
      * @return void
      * @internal
@@ -1476,8 +1483,8 @@ class Router
             $middleware = is_string($middleware) ? new $middleware() : $middleware;
 
             // Create handler
-            $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
-            $handler = new \Zerotoprod\WebFramework\Http\RequestHandler(
+            $psr17Factory = new Psr17Factory();
+            $handler = new RequestHandler(
                 function ($request) use ($next, $psr17Factory, $args, $compiled) {
                     ob_start();
 
@@ -1598,7 +1605,7 @@ class Router
             $compiled = file_get_contents($this->cache_path);
             $this->loadCompiled($compiled);
             $this->cache_loaded = true;
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Silently fail - will register routes normally
             error_log('Failed to load route cache: '.$e->getMessage());
         }
@@ -1648,14 +1655,14 @@ class Router
         try {
             // Ensure cache directory exists
             $dir = dirname($this->cache_path);
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
+            if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+                throw new RuntimeException(sprintf('Directory "%s" was not created', $dir));
             }
 
             // Compile and write
             $compiled = $this->compile();
             file_put_contents($this->cache_path, $compiled);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             error_log('Failed to write route cache: '.$e->getMessage());
         }
     }
