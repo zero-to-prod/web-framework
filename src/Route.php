@@ -12,7 +12,7 @@ use Closure;
  *
  * @link https://github.com/zero-to-prod/web-framework
  */
-class HttpRoute
+class Route
 {
     /**
      * @var string
@@ -169,13 +169,29 @@ class HttpRoute
     /**
      * Create a new route with an additional constraint.
      *
+     * Alias for withConstraint() for fluent API consistency.
+     *
      * @param  string|array  $param    Parameter name or array of constraints
      * @param  string|null   $pattern  Regex pattern (if $param is string)
      *
-     * @return HttpRoute  New route instance with updated constraint
+     * @return Route  New route instance with updated constraint
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function withConstraint($param, $pattern = null): HttpRoute
+    public function where($param, $pattern = null): Route
+    {
+        return $this->withConstraint($param, $pattern);
+    }
+
+    /**
+     * Create a new route with an additional constraint.
+     *
+     * @param  string|array  $param    Parameter name or array of constraints
+     * @param  string|null   $pattern  Regex pattern (if $param is string)
+     *
+     * @return Route  New route instance with updated constraint
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function withConstraint($param, $pattern = null): Route
     {
         if (is_array($param)) {
             return $this->withConstraints($param);
@@ -202,10 +218,10 @@ class HttpRoute
      *
      * @param  array  $constraints  Array of param => pattern
      *
-     * @return HttpRoute  New route instance with updated constraints
+     * @return Route  New route instance with updated constraints
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function withConstraints(array $constraints): HttpRoute
+    public function withConstraints(array $constraints): Route
     {
         $new_constraints = array_merge($this->constraints, $constraints);
         $compiled = RouteCompiler::compile($this->pattern, $new_constraints);
@@ -228,10 +244,10 @@ class HttpRoute
      *
      * @param  string  $name  Route name
      *
-     * @return HttpRoute  New route instance with name
+     * @return Route  New route instance with name
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function withName(string $name): HttpRoute
+    public function withName(string $name): Route
     {
         return new self(
             $this->method,
@@ -251,10 +267,10 @@ class HttpRoute
      *
      * @param  mixed  $middleware  Single middleware (callable/class name) or array
      *
-     * @return HttpRoute  New route instance with middleware
+     * @return Route  New route instance with middleware
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function withMiddleware($middleware): HttpRoute
+    public function withMiddleware($middleware): Route
     {
         return new self(
             $this->method,
@@ -309,10 +325,10 @@ class HttpRoute
      *
      * @param  array  $data  Route data from toArray()
      *
-     * @return HttpRoute  New route instance
+     * @return Route  New route instance
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public static function fromArray(array $data): HttpRoute
+    public static function fromArray(array $data): Route
     {
         return new self(
             $data['method'],

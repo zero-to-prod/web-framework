@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use Tests\TestCase;
-use Zerotoprod\WebFramework\HttpRoute;
+use Zerotoprod\WebFramework\Route;
 use Zerotoprod\WebFramework\Router;
 
 class MiddlewareTest extends TestCase
@@ -56,7 +56,7 @@ class MiddlewareTest extends TestCase
     {
         $received_args = null;
 
-        $server = ['REQUEST_METHOD' => 'GET', 'TEST_KEY' => 'test_value'];
+        $server = ['TEST_KEY' => 'test_value'];
         $db = new \stdClass();
         $db->name = 'database';
 
@@ -139,7 +139,7 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function routes_with_closure_middleware_are_not_cacheable(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->middleware(function ($next) {
                 $next();
             })
@@ -151,7 +151,7 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function routes_with_class_middleware_are_cacheable(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->middleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method']);
 
@@ -161,14 +161,14 @@ class MiddlewareTest extends TestCase
     /** @test */
     public function can_compile_and_load_routes_with_middleware(): void
     {
-        $routes1 = Router::for('', '')
+        $routes1 = Router::for()
             ->middleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method'])
                 ->middleware(AnotherMiddleware::class);
 
         $compiled = $routes1->compile();
 
-        $routes2 = Router::for('', '')->loadCompiled($compiled);
+        $routes2 = Router::for()->loadCompiled($compiled);
 
         $matched_route = $routes2->matchRoute('GET', '/test');
         $this->assertNotNull($matched_route);

@@ -41,39 +41,44 @@ class Router
 
     /** @var array Global middleware applied to all routes */
     private $global_middleware = [];
-    /**
-     * @var string
-     */
+
+    /** @var Route|null Track last route for fluent chaining */
+    private $last_route = null;
+
+    /** @var string HTTP method */
     private $method;
-    /**
-     * @var string
-     */
+
+    /** @var string Request URI */
     private $uri;
-    /**
-     * @var array
-     */
+
+    /** @var array Additional arguments passed to actions/middleware */
     private $args;
 
     /**
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function __construct(string $method, string $uri, ...$args)
+    public function __construct()
     {
-        $this->method = $method;
-        $this->uri = $uri;
-        $this->args = $args;
     }
 
     /**
-     * Create a new route collection.
+     * Create a new router for the given request.
      *
-     * @return self  New route collection instance
+     * @param  string  $method  HTTP method (defaults to empty string)
+     * @param  string  $uri     Request URI (defaults to empty string)
+     * @param  mixed   ...$args Additional arguments passed to actions/middleware
+     *
+     * @return self  New router instance
      *
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public static function for(string $method, string $uri, ...$args): self
+    public static function for(string $method = '', string $uri = '', ...$args): self
     {
-        return new self($method, $uri, ...$args);
+        $instance = new self();
+        $instance->method = $method;
+        $instance->uri = $uri;
+        $instance->args = $args;
+        return $instance;
     }
 
     /**
@@ -82,12 +87,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function get(string $uri, $action = null): PendingRoute
+    public function get(string $uri, $action = null): self
     {
-        return $this->addRoute('GET', $uri, $action);
+        $this->addRoute('GET', $uri, $action);
+        return $this;
     }
 
     /**
@@ -96,12 +102,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function post(string $uri, $action = null): PendingRoute
+    public function post(string $uri, $action = null): self
     {
-        return $this->addRoute('POST', $uri, $action);
+        $this->addRoute('POST', $uri, $action);
+        return $this;
     }
 
     /**
@@ -110,12 +117,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function put(string $uri, $action = null): PendingRoute
+    public function put(string $uri, $action = null): self
     {
-        return $this->addRoute('PUT', $uri, $action);
+        $this->addRoute('PUT', $uri, $action);
+        return $this;
     }
 
     /**
@@ -124,12 +132,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function patch(string $uri, $action = null): PendingRoute
+    public function patch(string $uri, $action = null): self
     {
-        return $this->addRoute('PATCH', $uri, $action);
+        $this->addRoute('PATCH', $uri, $action);
+        return $this;
     }
 
     /**
@@ -138,12 +147,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function delete(string $uri, $action = null): PendingRoute
+    public function delete(string $uri, $action = null): self
     {
-        return $this->addRoute('DELETE', $uri, $action);
+        $this->addRoute('DELETE', $uri, $action);
+        return $this;
     }
 
     /**
@@ -152,12 +162,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function options(string $uri, $action = null): PendingRoute
+    public function options(string $uri, $action = null): self
     {
-        return $this->addRoute('OPTIONS', $uri, $action);
+        $this->addRoute('OPTIONS', $uri, $action);
+        return $this;
     }
 
     /**
@@ -166,12 +177,13 @@ class Router
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for fluent chaining
+     * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function head(string $uri, $action = null): PendingRoute
+    public function head(string $uri, $action = null): self
     {
-        return $this->addRoute('HEAD', $uri, $action);
+        $this->addRoute('HEAD', $uri, $action);
+        return $this;
     }
 
     /**
@@ -196,7 +208,10 @@ class Router
     }
 
     /**
-     * Register global middleware applied to all routes.
+     * Register middleware.
+     *
+     * - If no route has been defined yet, registers global middleware for all routes
+     * - If called after route definition, adds middleware to that specific route only
      *
      * @param  mixed  $middleware  Single middleware (callable/class name) or array
      *
@@ -205,10 +220,17 @@ class Router
      */
     public function middleware($middleware): self
     {
-        if (is_array($middleware)) {
-            $this->global_middleware = array_merge($this->global_middleware, $middleware);
+        if ($this->last_route === null) {
+            // Global middleware
+            if (is_array($middleware)) {
+                $this->global_middleware = array_merge($this->global_middleware, $middleware);
+            } else {
+                $this->global_middleware[] = $middleware;
+            }
         } else {
-            $this->global_middleware[] = $middleware;
+            // Per-route middleware
+            $this->last_route = $this->last_route->withMiddleware($middleware);
+            $this->replaceLastRoute($this->last_route);
         }
 
         return $this;
@@ -233,7 +255,7 @@ class Router
 
         // Level 1: O(1) lookup for static routes
         if (isset($this->static_index[$key])) {
-            $this->executeWithMiddleware($this->static_index[$key], [], ...$this->args);
+            $this->executeWithMiddleware($this->static_index[$key], []);
             return true;
         }
 
@@ -247,7 +269,7 @@ class Router
             foreach ($this->prefix_index[$prefix_key] as $route) {
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->executeWithMiddleware($route, $params, ...$this->args);
+                    $this->executeWithMiddleware($route, $params);
                     return true;
                 }
             }
@@ -263,14 +285,14 @@ class Router
 
                 $params = [];
                 if ($route->matchAndExtract($path, $params)) {
-                    $this->executeWithMiddleware($route, $params, ...$this->args);
+                    $this->executeWithMiddleware($route, $params);
                     return true;
                 }
             }
         }
 
         if ($this->not_found_handler !== null) {
-            $this->executeWithMiddleware(null, [], ...$this->args);
+            $this->executeWithMiddleware(null, []);
             return true;
         }
 
@@ -300,7 +322,7 @@ class Router
      * @param  string  $method  HTTP method
      * @param  string  $uri     Request URI
      *
-     * @return HttpRoute|null  Matched route or null
+     * @return Route|null  Matched route or null
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
@@ -309,7 +331,7 @@ class Router
      *
      * @link     https://github.com/zero-to-prod/web-framework
      */
-    public function matchRoute(string $method, string $uri): ?HttpRoute
+    public function matchRoute(string $method, string $uri): ?Route
     {
         $path = $this->stripQueryString($uri);
         $key = $method.':'.$path;
@@ -424,39 +446,94 @@ class Router
         $this->global_middleware = $compiled['global_middleware'] ?? [];
 
         foreach ($routes as $routeData) {
-            $this->storeRoute(HttpRoute::fromArray($routeData));
+            $this->storeRoute(Route::fromArray($routeData));
         }
 
         return $this;
     }
 
     /**
-     * Finalize a route by storing it in the collection.
+     * Add constraint(s) to the last defined route.
      *
-     * @param  HttpRoute  $route  Route to store
+     * @param  string|array  $param    Parameter name or array of constraints
+     * @param  string|null   $pattern  Regex pattern (if $param is string)
      *
-     * @internal This method is intended for internal use by PendingRoute only.
-     *           Do not call directly. Use ->register() for explicit registration.
+     * @return self  Returns $this for method chaining
      *
-     * @link     https://github.com/zero-to-prod/web-framework
+     * @throws RuntimeException  If no route has been defined yet
+     * @throws InvalidArgumentException  If constraint is invalid
+     * @link https://github.com/zero-to-prod/web-framework
      */
-    public function finalizeRoute(HttpRoute $route): void
+    public function where($param, $pattern = null): self
     {
-        $this->storeRoute($route);
+        if ($this->last_route === null) {
+            throw new RuntimeException('No route to configure. Call get/post/etc first.');
+        }
+
+        // Validate constraints
+        if (is_array($param)) {
+            foreach ($param as $key => $value) {
+                $this->validateConstraint($key, $value);
+            }
+        } else {
+            $this->validateConstraint($param, $pattern);
+        }
+
+        $this->last_route = $this->last_route->where($param, $pattern);
+        $this->replaceLastRoute($this->last_route);
+
+        return $this;
     }
 
     /**
-     * Create and return a pending route.
+     * Validate constraint pattern.
+     *
+     * @param  string  $param    Parameter name
+     * @param  string  $pattern  Regex pattern
+     *
+     * @throws InvalidArgumentException  If invalid
+     */
+    private function validateConstraint(string $param, string $pattern): void
+    {
+        if (@preg_match('#^'.$pattern.'$#', '') === false) {
+            throw new InvalidArgumentException("Invalid regex pattern for constraint '{$param}': {$pattern}");
+        }
+    }
+
+    /**
+     * Name the last defined route.
+     *
+     * @param  string  $name  Route name
+     *
+     * @return self  Returns $this for method chaining
+     *
+     * @throws RuntimeException  If no route has been defined yet
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function name(string $name): self
+    {
+        if ($this->last_route === null) {
+            throw new RuntimeException('No route to configure. Call get/post/etc first.');
+        }
+
+        $this->last_route = $this->last_route->withName($name);
+        $this->replaceLastRoute($this->last_route);
+
+        return $this;
+    }
+
+    /**
+     * Create and store a route.
      *
      * @param  string  $method  HTTP method
      * @param  string  $uri     URI pattern
      * @param  mixed   $action  Action to execute
      *
-     * @return PendingRoute  Pending route for chaining
+     * @return void
      *
      * @throws InvalidArgumentException  If action is invalid
      */
-    private function addRoute(string $method, string $uri, $action): PendingRoute
+    private function addRoute(string $method, string $uri, $action): void
     {
         if ($action === null) {
             throw new InvalidArgumentException("Action cannot be null for route: $method $uri");
@@ -468,7 +545,7 @@ class Router
 
         $compiled = RouteCompiler::compile($uri);
 
-        $route = new HttpRoute(
+        $route = new Route(
             $method,
             $uri,
             $compiled['regex'],
@@ -478,7 +555,8 @@ class Router
             $action
         );
 
-        return new PendingRoute($this, $route);
+        $this->storeRoute($route);
+        $this->last_route = $route;
     }
 
     /**
@@ -487,9 +565,9 @@ class Router
      * Performance optimization: Build indices during registration
      * rather than lazily during dispatch.
      *
-     * @param  HttpRoute  $route  Route to store
+     * @param  Route  $route  Route to store
      */
-    private function storeRoute(HttpRoute $route): void
+    private function storeRoute(Route $route): void
     {
         $this->routes[] = $route;
         $this->pattern_index[$route->method.':'.$route->pattern] = $route;
@@ -513,6 +591,58 @@ class Router
                     $this->prefix_index[$prefix_key] = [];
                 }
                 $this->prefix_index[$prefix_key][] = $route;
+            }
+        }
+    }
+
+    /**
+     * Replace the last stored route with an updated version.
+     *
+     * Used when fluent methods (where, name, middleware) modify the route.
+     *
+     * @param  Route  $route  Updated route to replace
+     */
+    private function replaceLastRoute(Route $route): void
+    {
+        $key = $route->method.':'.$route->pattern;
+
+        // Replace in routes array
+        foreach ($this->routes as $i => $r) {
+            if ($r->method === $route->method && $r->pattern === $route->pattern) {
+                $this->routes[$i] = $route;
+                break;
+            }
+        }
+
+        // Update pattern index
+        $this->pattern_index[$key] = $route;
+
+        // Update static index (if applicable)
+        if (empty($route->params)) {
+            $this->static_index[$key] = $route;
+        } else {
+            // Update method index
+            if (isset($this->method_index[$route->method])) {
+                foreach ($this->method_index[$route->method] as $i => $r) {
+                    if ($r->pattern === $route->pattern) {
+                        $this->method_index[$route->method][$i] = $route;
+                        break;
+                    }
+                }
+            }
+
+            // Update prefix index
+            $prefix = $this->extractPrefix($route->pattern);
+            if ($prefix !== '/') {
+                $prefix_key = $route->method.':'.$prefix;
+                if (isset($this->prefix_index[$prefix_key])) {
+                    foreach ($this->prefix_index[$prefix_key] as $i => $r) {
+                        if ($r->pattern === $route->pattern) {
+                            $this->prefix_index[$prefix_key][$i] = $route;
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -587,26 +717,25 @@ class Router
      *
      * @param  mixed  $action  Action to execute
      * @param  array  $params  Route parameters extracted from URI
-     * @param  array  $args    Additional arguments to pass to action
      *
      * @throws InvalidArgumentException  If action type is invalid
      * @link https://github.com/zero-to-prod/web-framework
      */
-    private function execute($action, array $params, array $args): void
+    private function execute($action, array $params): void
     {
         if (is_array($action)) {
             if (!isset($action[0], $action[1]) || isset($action[2])) {
                 throw new InvalidArgumentException('Controller array must have exactly 2 elements: [Class, \'method\']');
             }
 
-            (new $action[0]())->{$action[1]}($params, ...$args);
+            (new $action[0]())->{$action[1]}($params, ...$this->args);
 
             return;
         }
 
         if (is_string($action)) {
             if (method_exists($action, '__invoke')) {
-                (new $action())($params, ...$args);
+                (new $action())($params, ...$this->args);
 
                 return;
             }
@@ -620,39 +749,38 @@ class Router
             throw new InvalidArgumentException('Action must be callable, controller array, or string');
         }
 
-        $action($params, ...$args);
+        $action($params, ...$this->args);
     }
 
     /**
      * Execute route action with middleware pipeline.
      *
-     * @param  HttpRoute|null  $route   Matched route (null for fallback)
-     * @param  array           $params  Route parameters
-     * @param  array           $args    Additional dispatch arguments
+     * @param  Route|null  $route   Matched route (null for fallback)
+     * @param  array       $params  Route parameters
      *
      * @return void
      * @link https://github.com/zero-to-prod/web-framework
      */
-    private function executeWithMiddleware($route, array $params, ...$args): void
+    private function executeWithMiddleware($route, array $params): void
     {
         $middleware = $route && $route->middleware
             ? array_merge($this->global_middleware, $route->middleware)
             : $this->global_middleware;
 
         if (empty($middleware)) {
-            $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
+            $this->execute($route ? $route->action : $this->not_found_handler, $params);
 
             return;
         }
 
-        $pipeline = function () use ($route, $params, $args) {
-            $this->execute($route ? $route->action : $this->not_found_handler, $params, $args);
+        $pipeline = function () use ($route, $params) {
+            $this->execute($route ? $route->action : $this->not_found_handler, $params);
         };
 
         foreach (array_reverse($middleware) as $mw) {
             $next = $pipeline;
-            $pipeline = function () use ($mw, $next, $args) {
-                (is_string($mw) ? new $mw() : $mw)($next, ...$args);
+            $pipeline = function () use ($mw, $next) {
+                (is_string($mw) ? new $mw() : $mw)($next, ...$this->args);
             };
         }
 

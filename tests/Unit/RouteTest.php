@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use InvalidArgumentException;
 use Tests\TestCase;
-use Zerotoprod\WebFramework\HttpRoute;
+use Zerotoprod\WebFramework\Route;
 use Zerotoprod\WebFramework\Router;
 
 class RouteTest extends TestCase
@@ -150,13 +150,13 @@ class RouteTest extends TestCase
     /** @test */
     public function match_route_returns_route_object(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             });
 
         $route = $routes->matchRoute('GET', '/users/123');
 
-        $this->assertInstanceOf(HttpRoute::class, $route);
+        $this->assertInstanceOf(Route::class, $route);
         $this->assertEquals('GET', $route->method);
         $this->assertEquals('/users/{id}', $route->pattern);
     }
@@ -164,7 +164,7 @@ class RouteTest extends TestCase
     /** @test */
     public function match_route_returns_null_when_no_match(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             });
 
@@ -176,7 +176,7 @@ class RouteTest extends TestCase
     /** @test */
     public function get_routes_returns_all_registered_routes(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users', function () {
             })
             ->get('/posts/{id}', function () {
@@ -192,7 +192,7 @@ class RouteTest extends TestCase
     /** @test */
     public function has_route_returns_true_for_existing_route(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             });
 
@@ -202,7 +202,7 @@ class RouteTest extends TestCase
     /** @test */
     public function has_route_returns_false_for_non_existing_route(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             });
 
@@ -215,7 +215,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Action cannot be null');
 
-        Router::for('', '')->get('/users', null);
+        Router::for()->get('/users', null);
     }
 
     /** @test */
@@ -434,7 +434,7 @@ class RouteTest extends TestCase
     /** @test */
     public function route_name_can_be_set(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             })
             ->name('user.show');
@@ -546,7 +546,7 @@ class RouteTest extends TestCase
     /** @test */
     public function compile_and_load_cacheable_routes(): void
     {
-        $routes1 = Router::for('', '')
+        $routes1 = Router::for()
             ->get('/users/{id}', [TestController::class, 'handle'])
             ->where('id', '\d+');
 
@@ -566,7 +566,7 @@ class RouteTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('closures');
 
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/test', function () {
             });
 
@@ -576,7 +576,7 @@ class RouteTest extends TestCase
     /** @test */
     public function is_cacheable_returns_false_for_closures(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/test', function () {
             });
 
@@ -586,7 +586,7 @@ class RouteTest extends TestCase
     /** @test */
     public function is_cacheable_returns_true_for_controller_arrays(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/test', [TestController::class, 'handle']);
 
         $this->assertTrue($routes->isCacheable());
@@ -677,7 +677,7 @@ class RouteTest extends TestCase
     /** @test */
     public function method_chaining_works(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users', function () {
             })
             ->post('/users', function () {
@@ -804,7 +804,7 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid regex pattern');
 
-        Router::for('', '')
+        Router::for()
             ->get('/users/{id}', function () {
             })
             ->where('id', '(?P<invalid>');
@@ -849,7 +849,7 @@ class RouteTest extends TestCase
     /** @test */
     public function route_extract_params_method_works(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             });
 
@@ -862,7 +862,7 @@ class RouteTest extends TestCase
     /** @test */
     public function route_matches_method_works(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             });
 
@@ -875,7 +875,7 @@ class RouteTest extends TestCase
     /** @test */
     public function get_routes_returns_empty_array_for_new_collection(): void
     {
-        $routes = Router::for('', '');
+        $routes = Router::for();
 
         $this->assertEquals([], $routes->getRoutes());
     }
@@ -883,7 +883,7 @@ class RouteTest extends TestCase
     /** @test */
     public function has_route_checks_method_and_pattern(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users/{id}', function () {
             })
             ->post('/users/{id}', function () {
@@ -959,20 +959,20 @@ class RouteTest extends TestCase
     /** @test */
     public function match_route_returns_static_route(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/static', function () {
             });
 
         $route = $routes->matchRoute('GET', '/static');
 
-        $this->assertInstanceOf(\Zerotoprod\WebFramework\HttpRoute::class, $route);
+        $this->assertInstanceOf(\Zerotoprod\WebFramework\Route::class, $route);
         $this->assertEquals('/static', $route->pattern);
     }
 
     /** @test */
     public function different_methods_same_pattern_are_different_routes(): void
     {
-        $routes = Router::for('', '')
+        $routes = Router::for()
             ->get('/users', function () {
             })
             ->post('/users', function () {
@@ -1057,7 +1057,7 @@ class RouteTest extends TestCase
     /** @test */
     public function cached_routes_dispatch_correctly(): void
     {
-        $routes1 = Router::for('', '')
+        $routes1 = Router::for()
             ->get('/users/{id:\d+}/posts/{slug?}', [TestController::class, 'showWithParams']);
 
         $compiled = $routes1->compile();
@@ -1076,13 +1076,13 @@ class RouteTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Fallback action cannot be null');
 
-        Router::for('', '')->fallback(null);
+        Router::for()->fallback(null);
     }
 
     /** @test */
     public function fallback_returns_self_for_chaining(): void
     {
-        $routes = Router::for('', '');
+        $routes = Router::for();
 
         $result = $routes->fallback(function () {
         });
@@ -1090,27 +1090,8 @@ class RouteTest extends TestCase
         $this->assertSame($routes, $result);
     }
 
-    /** @test */
-    public function finalize_route_stores_route_in_collection(): void
-    {
-        $routes = Router::for('', '');
-
-        $route = new HttpRoute(
-            'GET',
-            '/test',
-            '/^\/test$/',
-            [],
-            [],
-            [],
-            function () {
-            }
-        );
-
-        $routes->finalizeRoute($route);
-
-        $this->assertCount(1, $routes->getRoutes());
-        $this->assertTrue($routes->hasRoute('GET', '/test'));
-    }
+    // Removed test: finalizeRoute() was an internal implementation detail
+    // that has been removed as part of the API redesign
 
     /**
      * @test
@@ -1119,7 +1100,7 @@ class RouteTest extends TestCase
      */
     public function execute_method_is_private_and_not_part_of_public_api(): void
     {
-        $routes = Router::for('', '');
+        $routes = Router::for();
 
         // Verify execute() is not accessible from outside
         $this->assertFalse(
@@ -1167,12 +1148,12 @@ class RouteTest extends TestCase
     /** @test */
     public function load_compiled_returns_self_for_chaining(): void
     {
-        $routes1 = Router::for('', '')
+        $routes1 = Router::for()
             ->get('/users', [TestController::class, 'handle']);
 
         $compiled = $routes1->compile();
 
-        $routes2 = Router::for('', '');
+        $routes2 = Router::for();
         $result = $routes2->loadCompiled($compiled);
 
         $this->assertSame($routes2, $result);
