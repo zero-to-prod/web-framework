@@ -45,14 +45,17 @@ class Router
     /** @var Route|null Track last route for fluent chaining */
     private $last_route = null;
 
-    /** @var string HTTP method */
+    /** @var string HTTP method for dispatch */
     private $method;
 
-    /** @var string Request URI */
+    /** @var string Request URI for dispatch */
     private $uri;
 
     /** @var array Additional arguments passed to actions/middleware */
-    private $args;
+    private $args = [];
+
+    /** @var bool Whether indices have been built */
+    private $indices_built = false;
 
     /**
      * @link https://github.com/zero-to-prod/web-framework
@@ -62,10 +65,24 @@ class Router
     }
 
     /**
+     * Create a new router instance.
+     *
+     * @return self  New router instance
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public static function create(): self
+    {
+        return new self();
+    }
+
+    /**
      * Create a new router for the given request.
      *
-     * @param  string  $method  HTTP method (defaults to empty string)
-     * @param  string  $uri     Request URI (defaults to empty string)
+     * Alias for create()->forRequest() for backward compatibility.
+     *
+     * @param  string  $method  HTTP method
+     * @param  string  $uri     Request URI
      * @param  mixed   ...$args Additional arguments passed to actions/middleware
      *
      * @return self  New router instance
@@ -74,11 +91,26 @@ class Router
      */
     public static function for(string $method = '', string $uri = '', ...$args): self
     {
-        $instance = new self();
-        $instance->method = $method;
-        $instance->uri = $uri;
-        $instance->args = $args;
-        return $instance;
+        return self::create()->forRequest($method, $uri, ...$args);
+    }
+
+    /**
+     * Configure the request to dispatch.
+     *
+     * @param  string  $method  HTTP method
+     * @param  string  $uri     Request URI
+     * @param  mixed   ...$args Additional arguments passed to actions/middleware
+     *
+     * @return self  Returns $this for method chaining
+     *
+     * @link https://github.com/zero-to-prod/web-framework
+     */
+    public function forRequest(string $method, string $uri, ...$args): self
+    {
+        $this->method = $method;
+        $this->uri = $uri;
+        $this->args = $args;
+        return $this;
     }
 
     /**
@@ -208,30 +240,42 @@ class Router
     }
 
     /**
-     * Register middleware.
-     *
-     * - If no route has been defined yet, registers global middleware for all routes
-     * - If called after route definition, adds middleware to that specific route only
+     * Register global middleware for all routes.
      *
      * @param  mixed  $middleware  Single middleware (callable/class name) or array
      *
      * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
+    public function globalMiddleware($middleware): self
+    {
+        if (is_array($middleware)) {
+            $this->global_middleware = array_merge($this->global_middleware, $middleware);
+        } else {
+            $this->global_middleware[] = $middleware;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add middleware to the last defined route.
+     *
+     * @param  mixed  $middleware  Single middleware (callable/class name) or array
+     *
+     * @return self  Returns $this for method chaining
+     *
+     * @throws RuntimeException  If no route has been defined yet
+     * @link https://github.com/zero-to-prod/web-framework
+     */
     public function middleware($middleware): self
     {
         if ($this->last_route === null) {
-            // Global middleware
-            if (is_array($middleware)) {
-                $this->global_middleware = array_merge($this->global_middleware, $middleware);
-            } else {
-                $this->global_middleware[] = $middleware;
-            }
-        } else {
-            // Per-route middleware
-            $this->last_route = $this->last_route->withMiddleware($middleware);
-            $this->replaceLastRoute($this->last_route);
+            throw new RuntimeException('No route to add middleware to. Call get/post/etc first, or use globalMiddleware() for global middleware.');
         }
+
+        $this->last_route = $this->last_route->withMiddleware($middleware);
+        $this->replaceLastRoute($this->last_route);
 
         return $this;
     }
@@ -250,6 +294,11 @@ class Router
      */
     public function dispatch(): bool
     {
+        // Build indices lazily on first dispatch
+        if (!$this->indices_built) {
+            $this->buildIndices();
+        }
+
         $path = $this->stripQueryString($this->uri);
         $key = $this->method.':'.$path;
 
@@ -326,13 +375,15 @@ class Router
      * @internal This method is primarily for testing and debugging.
      *           Production code should use dispatch() instead.
      *
-     * @internal This method is primarily for testing and debugging.
-     *           Production code should use dispatch() instead.
-     *
      * @link     https://github.com/zero-to-prod/web-framework
      */
     public function matchRoute(string $method, string $uri): ?Route
     {
+        // Build indices lazily if not built yet
+        if (!$this->indices_built) {
+            $this->buildIndices();
+        }
+
         $path = $this->stripQueryString($uri);
         $key = $method.':'.$path;
 
@@ -560,10 +611,10 @@ class Router
     }
 
     /**
-     * Store a route and update all indices immediately.
+     * Store a route.
      *
-     * Performance optimization: Build indices during registration
-     * rather than lazily during dispatch.
+     * Indices are built lazily before first dispatch for better performance
+     * when defining many routes.
      *
      * @param  Route  $route  Route to store
      */
@@ -571,41 +622,60 @@ class Router
     {
         $this->routes[] = $route;
         $this->pattern_index[$route->method.':'.$route->pattern] = $route;
+    }
 
-        // Build static index for routes without parameters (O(1) lookup)
-        if (empty($route->params)) {
-            $this->static_index[$route->method.':'.$route->pattern] = $route;
-        } else {
-            // Build method index for dynamic routes (group by HTTP method)
-            if (!isset($this->method_index[$route->method])) {
-                $this->method_index[$route->method] = [];
-            }
-            $this->method_index[$route->method][] = $route;
+    /**
+     * Build all indices from stored routes.
+     *
+     * Performance optimization: Build indices once before dispatch
+     * rather than updating them after each route modification.
+     *
+     * @return void
+     */
+    private function buildIndices(): void
+    {
+        // Clear existing indices
+        $this->static_index = [];
+        $this->method_index = [];
+        $this->prefix_index = [];
 
-            // Build prefix index for faster dynamic route matching
-            // Extract static prefix (everything before first parameter)
-            $prefix = $this->extractPrefix($route->pattern);
-            if ($prefix !== '/') {
-                $prefix_key = $route->method.':'.$prefix;
-                if (!isset($this->prefix_index[$prefix_key])) {
-                    $this->prefix_index[$prefix_key] = [];
+        // Build indices from routes array
+        foreach ($this->routes as $route) {
+            // Build static index for routes without parameters (O(1) lookup)
+            if (empty($route->params)) {
+                $this->static_index[$route->method.':'.$route->pattern] = $route;
+            } else {
+                // Build method index for dynamic routes (group by HTTP method)
+                if (!isset($this->method_index[$route->method])) {
+                    $this->method_index[$route->method] = [];
                 }
-                $this->prefix_index[$prefix_key][] = $route;
+                $this->method_index[$route->method][] = $route;
+
+                // Build prefix index for faster dynamic route matching
+                $prefix = $this->extractPrefix($route->pattern);
+                if ($prefix !== '/') {
+                    $prefix_key = $route->method.':'.$prefix;
+                    if (!isset($this->prefix_index[$prefix_key])) {
+                        $this->prefix_index[$prefix_key] = [];
+                    }
+                    $this->prefix_index[$prefix_key][] = $route;
+                }
             }
         }
+
+        $this->indices_built = true;
     }
 
     /**
      * Replace the last stored route with an updated version.
      *
-     * Used when fluent methods (where, name, middleware) modify the route.
+     * Simplified implementation that only updates routes array and pattern index.
+     * Other indices are rebuilt lazily on dispatch.
      *
      * @param  Route  $route  Updated route to replace
      */
     private function replaceLastRoute(Route $route): void
     {
-        $key = $route->method.':'.$route->pattern;
-
         // Replace in routes array
         foreach ($this->routes as $i => $r) {
             if ($r->method === $route->method && $r->pattern === $route->pattern) {
@@ -615,36 +685,10 @@ class Router
         }
 
         // Update pattern index
-        $this->pattern_index[$key] = $route;
+        $this->pattern_index[$route->method.':'.$route->pattern] = $route;
 
-        // Update static index (if applicable)
-        if (empty($route->params)) {
-            $this->static_index[$key] = $route;
-        } else {
-            // Update method index
-            if (isset($this->method_index[$route->method])) {
-                foreach ($this->method_index[$route->method] as $i => $r) {
-                    if ($r->pattern === $route->pattern) {
-                        $this->method_index[$route->method][$i] = $route;
-                        break;
-                    }
-                }
-            }
-
-            // Update prefix index
-            $prefix = $this->extractPrefix($route->pattern);
-            if ($prefix !== '/') {
-                $prefix_key = $route->method.':'.$prefix;
-                if (isset($this->prefix_index[$prefix_key])) {
-                    foreach ($this->prefix_index[$prefix_key] as $i => $r) {
-                        if ($r->pattern === $route->pattern) {
-                            $this->prefix_index[$prefix_key][$i] = $route;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        // Mark indices as needing rebuild
+        $this->indices_built = false;
     }
 
     /**

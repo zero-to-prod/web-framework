@@ -14,7 +14,7 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Router::for('GET', '/test')
-            ->middleware(function ($next) use (&$execution_order) {
+            ->globalMiddleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global_before';
                 $next();
                 $execution_order[] = 'global_after';
@@ -34,7 +34,7 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Router::for('GET', '/test')
-            ->middleware(function ($next) use (&$execution_order) {
+            ->globalMiddleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global';
                 $next();
             })
@@ -61,7 +61,7 @@ class MiddlewareTest extends TestCase
         $db->name = 'database';
 
         $routes = Router::for('GET', '/test', $server, $db)
-            ->middleware(function ($next, ...$context) use (&$received_args) {
+            ->globalMiddleware(function ($next, ...$context) use (&$received_args) {
                 $received_args = $context;
                 $next();
             })
@@ -81,7 +81,7 @@ class MiddlewareTest extends TestCase
         $action_executed = false;
 
         $routes = Router::for('GET', '/test')
-            ->middleware(function ($next) {
+            ->globalMiddleware(function ($next) {
                 echo 'Halted';
             })
             ->get('/test', function () use (&$action_executed) {
@@ -99,7 +99,7 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Router::for('GET', '/test')
-            ->middleware([
+            ->globalMiddleware([
                 function ($next) use (&$execution_order) {
                     $execution_order[] = 'middleware1';
                     $next();
@@ -140,7 +140,7 @@ class MiddlewareTest extends TestCase
     public function routes_with_closure_middleware_are_not_cacheable(): void
     {
         $routes = Router::for()
-            ->middleware(function ($next) {
+            ->globalMiddleware(function ($next) {
                 $next();
             })
             ->get('/test', [MiddlewareTestController::class, 'method']);
@@ -152,7 +152,7 @@ class MiddlewareTest extends TestCase
     public function routes_with_class_middleware_are_cacheable(): void
     {
         $routes = Router::for()
-            ->middleware(TestInvokableMiddleware::class)
+            ->globalMiddleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method']);
 
         $this->assertTrue($routes->isCacheable());
@@ -162,7 +162,7 @@ class MiddlewareTest extends TestCase
     public function can_compile_and_load_routes_with_middleware(): void
     {
         $routes1 = Router::for()
-            ->middleware(TestInvokableMiddleware::class)
+            ->globalMiddleware(TestInvokableMiddleware::class)
             ->get('/test', [MiddlewareTestController::class, 'method'])
                 ->middleware(AnotherMiddleware::class);
 
@@ -200,7 +200,7 @@ class MiddlewareTest extends TestCase
         $fallback_executed = false;
 
         $routes = Router::for('GET', '/non-existent')
-            ->middleware(function ($next) use (&$middleware_executed) {
+            ->globalMiddleware(function ($next) use (&$middleware_executed) {
                 $middleware_executed = true;
                 $next();
             })
@@ -221,11 +221,11 @@ class MiddlewareTest extends TestCase
         $execution_order = [];
 
         $routes = Router::for('GET', '/test')
-            ->middleware(function ($next) use (&$execution_order) {
+            ->globalMiddleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global1';
                 $next();
             })
-            ->middleware(function ($next) use (&$execution_order) {
+            ->globalMiddleware(function ($next) use (&$execution_order) {
                 $execution_order[] = 'global2';
                 $next();
             })
