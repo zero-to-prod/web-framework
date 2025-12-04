@@ -457,6 +457,19 @@ class Router
     }
 
     /**
+     * Normalize middleware to array format.
+     *
+     * @param  mixed  $middleware  Single middleware or array
+     *
+     * @return array  Normalized middleware array
+     * @internal
+     */
+    private function normalizeMiddleware($middleware): array
+    {
+        return is_array($middleware) ? $middleware : [$middleware];
+    }
+
+    /**
      * Register global middleware for all routes.
      *
      * @param  mixed  $middleware  Single middleware (callable/class name) or array
@@ -466,11 +479,10 @@ class Router
      */
     public function globalMiddleware($middleware): self
     {
-        if (is_array($middleware)) {
-            $this->global_middleware = array_merge($this->global_middleware, $middleware);
-        } else {
-            $this->global_middleware[] = $middleware;
-        }
+        $this->global_middleware = array_merge(
+            $this->global_middleware,
+            $this->normalizeMiddleware($middleware)
+        );
 
         // Mark indices (and pipelines) as needing rebuild
         $this->indices_built = false;
@@ -494,7 +506,7 @@ class Router
         if ($this->last_route === null) {
             $this->pending_group_middleware = array_merge(
                 $this->pending_group_middleware ?? [],
-                (array) $middleware
+                $this->normalizeMiddleware($middleware)
             );
             return $this;
         }
@@ -568,6 +580,20 @@ class Router
     }
 
     /**
+     * Build index key from method and path.
+     *
+     * @param  string  $method  HTTP method
+     * @param  string  $path    Route path
+     *
+     * @return string  Index key (method:path)
+     * @internal
+     */
+    private function buildIndexKey(string $method, string $path): string
+    {
+        return $method.':'.$path;
+    }
+
+    /**
      * Find matching route using triple-level optimization.
      *
      * @param  string  $method  HTTP method
@@ -585,7 +611,7 @@ class Router
         }
 
         $path = $this->stripQueryString($uri);
-        $key = $method.':'.$path;
+        $key = $this->buildIndexKey($method, $path);
 
         // Level 1: O(1) static lookup
         if (isset($this->static_index[$key])) {
@@ -595,7 +621,7 @@ class Router
 
         // Level 2: O(1) prefix-based lookup
         $prefix = $this->extractPrefix($path);
-        $prefix_key = $method.':'.$prefix;
+        $prefix_key = $this->buildIndexKey($method, $prefix);
 
         if (isset($this->prefix_index[$prefix_key])) {
             foreach ($this->prefix_index[$prefix_key] as $route) {
@@ -654,7 +680,7 @@ class Router
      */
     public function hasRoute(string $method, string $pattern): bool
     {
-        return isset($this->pattern_index[$method.':'.$pattern]);
+        return isset($this->pattern_index[$this->buildIndexKey($method, $pattern)]);
     }
 
     /**
@@ -767,6 +793,19 @@ class Router
     }
 
     /**
+     * Build constraint regex pattern.
+     *
+     * @param  string  $constraint
+     *
+     * @return string  Compiled regex pattern
+     * @internal
+     */
+    private function buildConstraintRegex(string $constraint): string
+    {
+        return '#^'.$constraint.'$#';
+    }
+
+    /**
      * Validate constraint pattern.
      *
      * @param  string  $param    Parameter name
@@ -777,7 +816,7 @@ class Router
      */
     private function validateConstraint(string $param, string $pattern): void
     {
-        if (@preg_match('#^'.$pattern.'$#', '') === false) {
+        if (@preg_match($this->buildConstraintRegex($pattern), '') === false) {
             throw new InvalidArgumentException("Invalid regex pattern for constraint '$param': $pattern");
         }
     }
@@ -845,13 +884,30 @@ class Router
             return;
         }
 
-        $pattern = '#^'.$route->constraints[$param].'$#';
+        $pattern = $this->buildConstraintRegex($route->constraints[$param]);
 
         if (!preg_match($pattern, (string) $value)) {
             throw new RuntimeException(
                 "Parameter '{$param}' value '{$value}' does not match constraint"
             );
         }
+    }
+
+    /**
+     * Build parameter placeholder variations.
+     *
+     * @param  string  $param  Parameter name
+     *
+     * @return array  Placeholder variations
+     * @internal
+     */
+    private function buildParamPlaceholders(string $param): array
+    {
+        return [
+            'required' => '{'.$param.'}',
+            'optional' => '{'.$param.'?}',
+            'optional_path' => '/{'.$param.'?}'
+        ];
     }
 
     /**
@@ -871,6 +927,7 @@ class Router
 
         foreach ($route->params as $param) {
             $is_optional = in_array($param, $route->optional_params, true);
+            $placeholders = $this->buildParamPlaceholders($param);
 
             // Check if parameter provided
             if (!isset($params[$param])) {
@@ -878,7 +935,7 @@ class Router
                     throw new RuntimeException("Missing required parameter: {$param}");
                 }
                 // Mark optional for removal
-                $replacements['/{'.$param.'?}'] = '';
+                $replacements[$placeholders['optional_path']] = '';
                 continue;
             }
 
@@ -886,8 +943,8 @@ class Router
             $this->validateUrlParameter($route, $param, $value);
 
             // Add both syntaxes
-            $replacements['{'.$param.'}'] = (string) $value;
-            $replacements['{'.$param.'?}'] = (string) $value;
+            $replacements[$placeholders['required']] = (string) $value;
+            $replacements[$placeholders['optional']] = (string) $value;
         }
 
         return $replacements;
@@ -1035,7 +1092,25 @@ class Router
     {
         $this->last_route_index = count($this->routes);
         $this->routes[] = $route;
-        $this->pattern_index[$route->method.':'.$route->pattern] = $route;
+        $this->pattern_index[$this->buildIndexKey($route->method, $route->pattern)] = $route;
+    }
+
+    /**
+     * Append value to indexed array, initializing if needed.
+     *
+     * @param  array   $index
+     * @param  string  $key
+     * @param  mixed   $value
+     *
+     * @return void
+     * @internal
+     */
+    private function indexAppend(array &$index, string $key, $value): void
+    {
+        if (!isset($index[$key])) {
+            $index[$key] = [];
+        }
+        $index[$key][] = $value;
     }
 
     /**
@@ -1061,22 +1136,16 @@ class Router
 
             // Build static index for routes without parameters (O(1) lookup)
             if (empty($route->params)) {
-                $this->static_index[$route->method.':'.$route->pattern] = $route;
+                $this->static_index[$this->buildIndexKey($route->method, $route->pattern)] = $route;
             } else {
                 // Build method index for dynamic routes (group by HTTP method)
-                if (!isset($this->method_index[$route->method])) {
-                    $this->method_index[$route->method] = [];
-                }
-                $this->method_index[$route->method][] = $route;
+                $this->indexAppend($this->method_index, $route->method, $route);
 
                 // Build prefix index for faster dynamic route matching
                 $prefix = $this->extractPrefix($route->pattern);
                 if ($prefix !== '/') {
-                    $prefix_key = $route->method.':'.$prefix;
-                    if (!isset($this->prefix_index[$prefix_key])) {
-                        $this->prefix_index[$prefix_key] = [];
-                    }
-                    $this->prefix_index[$prefix_key][] = $route;
+                    $prefix_key = $this->buildIndexKey($route->method, $prefix);
+                    $this->indexAppend($this->prefix_index, $prefix_key, $route);
                 }
             }
         }
@@ -1104,7 +1173,7 @@ class Router
         }
 
         // Update pattern index
-        $this->pattern_index[$route->method.':'.$route->pattern] = $route;
+        $this->pattern_index[$this->buildIndexKey($route->method, $route->pattern)] = $route;
 
         // Mark indices as needing rebuild
         $this->indices_built = false;
@@ -1159,6 +1228,26 @@ class Router
     }
 
     /**
+     * Extract text up to last slash, returning '/' if none found.
+     *
+     * @param  string  $text
+     *
+     * @return string
+     * @internal
+     */
+    private function extractUntilLastSlash(string $text): string
+    {
+        $last_slash = strrpos($text, '/');
+
+        if ($last_slash === false || $last_slash === 0) {
+            return '/';
+        }
+
+        $result = substr($text, 0, $last_slash);
+        return $result === '' ? '/' : $result;
+    }
+
+    /**
      * Extract prefix from static route (no parameters).
      *
      * @param  string  $pattern
@@ -1168,13 +1257,7 @@ class Router
      */
     private function extractPrefixFromStatic(string $pattern): string
     {
-        $last_slash = strrpos($pattern, '/');
-
-        if ($last_slash === false || $last_slash === 0) {
-            return '/';
-        }
-
-        return substr($pattern, 0, $last_slash);
+        return $this->extractUntilLastSlash($pattern);
     }
 
     /**
@@ -1189,14 +1272,57 @@ class Router
     private function extractPrefixBeforeParam(string $pattern, int $param_pos): string
     {
         $prefix = substr($pattern, 0, $param_pos);
-        $last_slash = strrpos($prefix, '/');
+        return $this->extractUntilLastSlash($prefix);
+    }
 
-        if ($last_slash === false) {
-            return '/';
+    /**
+     * Execute array-based controller action [Class, 'method'].
+     *
+     * @param  array  $action
+     * @param  array  $params
+     *
+     * @return void
+     *
+     * @throws InvalidArgumentException
+     * @internal
+     */
+    private function executeArrayAction(array $action, array $params): void
+    {
+        if (!isset($action[0], $action[1]) || isset($action[2])) {
+            throw new InvalidArgumentException(
+                'Controller array must have exactly 2 elements: [Class, \'method\']'
+            );
         }
 
-        $result = substr($prefix, 0, $last_slash);
-        return $result === '' ? '/' : $result;
+        (new $action[0]())->{$action[1]}($params, ...$this->args);
+    }
+
+    /**
+     * Execute invokable class action.
+     *
+     * @param  string  $action
+     * @param  array   $params
+     *
+     * @return void
+     * @internal
+     */
+    private function executeInvokableAction(string $action, array $params): void
+    {
+        (new $action())($params, ...$this->args);
+    }
+
+    /**
+     * Execute callable action.
+     *
+     * @param  callable  $action
+     * @param  array     $params
+     *
+     * @return void
+     * @internal
+     */
+    private function executeCallableAction(callable $action, array $params): void
+    {
+        $action($params, ...$this->args);
     }
 
     /**
@@ -1217,26 +1343,22 @@ class Router
     private function execute($action, array $params): void
     {
         if (is_array($action)) {
-            if (!isset($action[0], $action[1]) || isset($action[2])) {
-                throw new InvalidArgumentException('Controller array must have exactly 2 elements: [Class, \'method\']');
-            }
-
-            (new $action[0]())->{$action[1]}($params, ...$this->args);
-
+            $this->executeArrayAction($action, $params);
             return;
         }
 
         if (is_string($action) && method_exists($action, '__invoke')) {
-            (new $action())($params, ...$this->args);
-
+            $this->executeInvokableAction($action, $params);
             return;
         }
 
         if (!is_callable($action)) {
-            throw new InvalidArgumentException('Action must be callable (closure), controller array [Class::class, \'method\'], or invokable class');
+            throw new InvalidArgumentException(
+                'Action must be callable (closure), controller array [Class::class, \'method\'], or invokable class'
+            );
         }
 
-        $action($params, ...$this->args);
+        $this->executeCallableAction($action, $params);
     }
 
     /**
@@ -1433,39 +1555,11 @@ class Router
 
         foreach (array_reverse($compiled_middleware) as $compiled) {
             $pipeline = $compiled['is_psr15']
-                ? $this->wrapPsr15Compiled($compiled['middleware'], $pipeline)
-                : $this->wrapVariadicCompiled($compiled['middleware'], $pipeline);
+                ? $this->wrapPsr15($compiled['middleware'], $pipeline, true)
+                : $this->wrapVariadic($compiled['middleware'], $pipeline, true);
         }
 
         return $pipeline;
-    }
-
-    /**
-     * Wrap PSR-15 middleware (compiled version - type already determined).
-     *
-     * @param  mixed     $middleware
-     * @param  callable  $next
-     *
-     * @return callable
-     * @internal
-     */
-    private function wrapPsr15Compiled($middleware, callable $next): callable
-    {
-        return $this->wrapPsr15($middleware, $next, true);
-    }
-
-    /**
-     * Wrap variadic middleware (compiled version - type already determined).
-     *
-     * @param  mixed     $middleware
-     * @param  callable  $next
-     *
-     * @return callable
-     * @internal
-     */
-    private function wrapVariadicCompiled($middleware, callable $next): callable
-    {
-        return $this->wrapVariadic($middleware, $next, true);
     }
 
     /**
@@ -1518,28 +1612,16 @@ class Router
      */
     private function shouldWriteCache(): bool
     {
-        // Don't write if we loaded from cache
-        if ($this->cache_loaded) {
-            return false;
-        }
+        $should_write = !$this->cache_loaded
+            && !empty($this->cache_path)
+            && $this->shouldUseCache()
+            && $this->isCacheable();
 
-        // Don't write if cache path not set
-        if (empty($this->cache_path)) {
-            return false;
-        }
-
-        // Don't write if not in caching environment
-        if (!$this->shouldUseCache()) {
-            return false;
-        }
-
-        // Don't write if routes aren't cacheable
-        if (!$this->isCacheable()) {
+        if (!$should_write && !$this->isCacheable() && !empty($this->cache_path)) {
             error_log('Warning: Routes contain closures and cannot be cached');
-            return false;
         }
 
-        return true;
+        return $should_write;
     }
 
     /**
