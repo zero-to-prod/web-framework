@@ -428,7 +428,7 @@ class Router
      * @return self  Returns $this for method chaining
      * @link https://github.com/zero-to-prod/web-framework
      */
-    public function autoCache(string $cache_path, ?string $env_var = null, array $cache_envs = null): self
+    public function autoCache(string $cache_path, ?string $env_var = null, ?array $cache_envs = null): self
     {
         $this->cache_path = $cache_path;
         if ($env_var !== null) {
