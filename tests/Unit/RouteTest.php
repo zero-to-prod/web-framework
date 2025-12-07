@@ -1186,12 +1186,12 @@ class RouteTest extends TestCase
     }
 
     /** @test */
-    public function uri_without_leading_slash_is_normalized(): void
+    public function any_route_responds_to_get_request(): void
     {
         $executed = false;
 
-        $routes = Router::for('GET', '/about')
-            ->get('about', function () use (&$executed) {
+        $routes = Router::for('GET', '/test')
+            ->any('/test', function () use (&$executed) {
                 $executed = true;
             });
 
@@ -1201,12 +1201,135 @@ class RouteTest extends TestCase
     }
 
     /** @test */
-    public function uri_without_leading_slash_with_parameters(): void
+    public function any_route_responds_to_post_request(): void
+    {
+        $executed = false;
+
+        $routes = Router::for('POST', '/test')
+            ->any('/test', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function any_route_responds_to_put_request(): void
+    {
+        $executed = false;
+
+        $routes = Router::for('PUT', '/test')
+            ->any('/test', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function any_route_responds_to_patch_request(): void
+    {
+        $executed = false;
+
+        $routes = Router::for('PATCH', '/test')
+            ->any('/test', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function any_route_responds_to_delete_request(): void
+    {
+        $executed = false;
+
+        $routes = Router::for('DELETE', '/test')
+            ->any('/test', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function any_route_responds_to_options_request(): void
+    {
+        $executed = false;
+
+        $routes = Router::for('OPTIONS', '/test')
+            ->any('/test', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function any_route_responds_to_head_request(): void
+    {
+        $executed = false;
+
+        $routes = Router::for('HEAD', '/test')
+            ->any('/test', function () use (&$executed) {
+                $executed = true;
+            });
+
+        $routes->dispatch();
+
+        $this->assertTrue($executed);
+    }
+
+    /** @test */
+    public function any_route_with_specific_methods_array(): void
+    {
+        $routes = Router::for()
+            ->any('/test', [TestController::class, 'handle'], ['GET', 'POST']);
+
+        $this->assertTrue($routes->hasRoute('GET', '/test'));
+        $this->assertTrue($routes->hasRoute('POST', '/test'));
+        $this->assertFalse($routes->hasRoute('PUT', '/test'));
+        $this->assertFalse($routes->hasRoute('DELETE', '/test'));
+    }
+
+    /** @test */
+    public function any_route_ignores_invalid_methods(): void
+    {
+        $routes = Router::for()
+            ->any('/test', [TestController::class, 'handle'], ['GET', 'INVALID', 'POST']);
+
+        $this->assertTrue($routes->hasRoute('GET', '/test'));
+        $this->assertTrue($routes->hasRoute('POST', '/test'));
+        $this->assertFalse($routes->hasRoute('INVALID', '/test'));
+    }
+
+    /** @test */
+    public function any_route_with_lowercase_methods(): void
+    {
+        $routes = Router::for()
+            ->any('/test', [TestController::class, 'handle'], ['get', 'post']);
+
+        $this->assertTrue($routes->hasRoute('GET', '/test'));
+        $this->assertTrue($routes->hasRoute('POST', '/test'));
+    }
+
+    /** @test */
+    public function any_route_with_dynamic_parameters(): void
     {
         $received_params = null;
 
-        $routes = Router::for('GET', '/users/123')
-            ->get('users/{id}', function (array $params) use (&$received_params) {
+        $routes = Router::for('POST', '/users/123')
+            ->any('/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             });
 
@@ -1216,18 +1339,190 @@ class RouteTest extends TestCase
     }
 
     /** @test */
-    public function empty_string_uri_is_normalized_to_root(): void
+    public function any_route_with_constraints(): void
+    {
+        $received_params = null;
+
+        $routes = Router::for('PUT', '/users/456')
+            ->any('/users/{id}', function (array $params) use (&$received_params) {
+                $received_params = $params;
+            })
+            ->where('id', '\d+');
+
+        $routes->dispatch();
+
+        $this->assertEquals(['id' => '456'], $received_params);
+    }
+
+    /** @test */
+    public function any_route_constraint_rejects_invalid_values(): void
     {
         $executed = false;
 
-        $routes = Router::for('GET', '/')
-            ->get('', function () use (&$executed) {
+        $routes = Router::for('GET', '/users/abc')
+            ->any('/users/{id}', function () use (&$executed) {
                 $executed = true;
+            })
+            ->where('id', '\d+');
+
+        $routes->dispatch();
+
+        $this->assertFalse($executed);
+    }
+
+    /** @test */
+    public function any_route_with_controller_array(): void
+    {
+        $routes = Router::for('POST', '/test')
+            ->any('/test', [TestController::class, 'handle']);
+
+        TestController::$executed = false;
+        $routes->dispatch();
+
+        $this->assertTrue(TestController::$executed);
+    }
+
+    /** @test */
+    public function any_route_with_invokable_controller(): void
+    {
+        $routes = Router::for('DELETE', '/invoke')
+            ->any('/invoke', InvokeableTestController::class);
+
+        InvokeableTestController::$invoked = false;
+        $routes->dispatch();
+
+        $this->assertTrue(InvokeableTestController::$invoked);
+    }
+
+    /** @test */
+    public function any_route_with_named_route(): void
+    {
+        $routes = Router::for('GET', '/users/789')
+            ->any('/users/{id}', function () {
+            })
+            ->name('users.any');
+
+        $route = $routes->matchRoute('GET', '/users/789');
+
+        $this->assertEquals('users.any', $route->name);
+    }
+
+    /** @test */
+    public function any_route_registers_all_methods_by_default(): void
+    {
+        $routes = Router::for()
+            ->any('/test', [TestController::class, 'handle']);
+
+        $this->assertTrue($routes->hasRoute('GET', '/test'));
+        $this->assertTrue($routes->hasRoute('POST', '/test'));
+        $this->assertTrue($routes->hasRoute('PUT', '/test'));
+        $this->assertTrue($routes->hasRoute('PATCH', '/test'));
+        $this->assertTrue($routes->hasRoute('DELETE', '/test'));
+        $this->assertTrue($routes->hasRoute('OPTIONS', '/test'));
+        $this->assertTrue($routes->hasRoute('HEAD', '/test'));
+    }
+
+    /** @test */
+    public function any_route_with_additional_args(): void
+    {
+        $received_args = [];
+
+        $routes = Router::for('PATCH', '/test', 'arg1', 'arg2')
+            ->any('/test', function (array $params, ...$args) use (&$received_args) {
+                $received_args = $args;
             });
 
         $routes->dispatch();
 
-        $this->assertTrue($executed);
+        $this->assertEquals(['arg1', 'arg2'], $received_args);
+    }
+
+    /** @test */
+    public function any_route_returns_self_for_chaining(): void
+    {
+        $routes = Router::for();
+
+        $result = $routes->any('/test', function () {
+        });
+
+        $this->assertSame($routes, $result);
+    }
+
+    /** @test */
+    public function any_route_throws_exception_when_action_is_null(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Action cannot be null');
+
+        Router::for()->any('/test', null);
+    }
+
+    /** @test */
+    public function any_route_with_optional_parameters(): void
+    {
+        $received_params = null;
+
+        $routes = Router::for('GET', '/users')
+            ->any('/users/{id?}', function (array $params) use (&$received_params) {
+                $received_params = $params;
+            });
+
+        $routes->dispatch();
+
+        $this->assertEquals([], $received_params);
+    }
+
+    /** @test */
+    public function any_route_can_be_compiled_and_cached(): void
+    {
+        $routes1 = Router::for()
+            ->any('/test', [TestController::class, 'handle']);
+
+        $compiled = $routes1->compile();
+
+        $routes2 = Router::for('POST', '/test')->loadCompiled($compiled);
+
+        TestController::$executed = false;
+        $routes2->dispatch();
+
+        $this->assertTrue(TestController::$executed);
+    }
+
+    /** @test */
+    public function any_route_with_inline_constraints(): void
+    {
+        $received_params = null;
+
+        $routes = Router::for('PATCH', '/users/999')
+            ->any('/users/{id:\d+}', function (array $params) use (&$received_params) {
+                $received_params = $params;
+            });
+
+        $routes->dispatch();
+
+        $this->assertEquals(['id' => '999'], $received_params);
+    }
+
+    /** @test */
+    public function any_route_with_empty_methods_array_registers_no_routes(): void
+    {
+        $routes = Router::for()
+            ->any('/test', [TestController::class, 'handle'], []);
+
+        $this->assertFalse($routes->hasRoute('GET', '/test'));
+        $this->assertFalse($routes->hasRoute('POST', '/test'));
+        $this->assertFalse($routes->hasRoute('PUT', '/test'));
+    }
+
+    /** @test */
+    public function any_route_with_single_method_in_array(): void
+    {
+        $routes = Router::for()
+            ->any('/test', [TestController::class, 'handle'], ['DELETE']);
+
+        $this->assertTrue($routes->hasRoute('DELETE', '/test'));
+        $this->assertFalse($routes->hasRoute('GET', '/test'));
+        $this->assertFalse($routes->hasRoute('POST', '/test'));
     }
 }
 

@@ -315,9 +315,48 @@ $routes->patch('/resource', $action);    // PATCH requests
 $routes->delete('/resource', $action);   // DELETE requests
 $routes->options('/resource', $action);  // OPTIONS requests
 $routes->head('/resource', $action);     // HEAD requests
+$routes->any('/resource', $action);      // All HTTP methods
 ```
 
 Each method returns the `Router` instance, allowing you to chain additional configuration methods like `where()`, `middleware()`, and `name()`, or continue defining more routes.
+
+##### Any Method Routes
+
+The `any()` method registers a route for all standard HTTP methods (GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD):
+
+```php
+// Responds to all HTTP methods
+$routes->any('/api/webhook', [WebhookController::class, 'handle']);
+
+// With specific methods array
+$routes->any('/api/data', [DataController::class, 'process'], ['GET', 'POST']);
+
+// With constraints
+$routes->any('/users/{id}', [UserController::class, 'process'])
+    ->where('id', '\d+');
+
+// With middleware (applies to all methods)
+$routes->any('/admin/action', [AdminController::class, 'handle'])
+    ->middleware(AuthMiddleware::class);
+
+// With route naming (all methods share the same name)
+$routes->any('/process', [ProcessController::class, 'run'])
+    ->name('process.run');
+```
+
+**Custom method filtering:**
+```php
+// Only respond to GET and POST
+$routes->any('/api/endpoint', $action, ['GET', 'POST']);
+
+// Lowercase methods are automatically converted to uppercase
+$routes->any('/api/resource', $action, ['get', 'post', 'put']);
+
+// Invalid methods are silently ignored
+$routes->any('/test', $action, ['GET', 'INVALID']);  // Only registers GET
+```
+
+**When called with `where()`, `middleware()`, or `name()`**, the configuration applies to all routes created by `any()`.
 
 #### Action Types
 
