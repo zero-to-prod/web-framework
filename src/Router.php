@@ -77,9 +77,6 @@ class Router
     /** @var int|null Index of last route in routes array */
     private $last_route_index = null;
 
-    /** @var array Track routes created by any() for bulk configuration */
-    private $any_routes = [];
-
     /** @var string HTTP method for dispatch */
     private $method;
 
@@ -200,7 +197,6 @@ class Router
      */
     public function get(string $uri, $action = null): self
     {
-        $this->any_routes = [];
         $this->addRoute('GET', $uri, $action);
         return $this;
     }
@@ -310,13 +306,10 @@ class Router
         $allowed_methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'];
         $target_methods = $methods ?? $allowed_methods;
 
-        $this->any_routes = [];
-
         foreach ($target_methods as $method) {
             $method = strtoupper($method);
             if (in_array($method, $allowed_methods, true)) {
                 $this->addRoute($method, $uri, $action);
-                $this->any_routes[] = ['route' => $this->last_route, 'index' => $this->last_route_index];
             }
         }
 
@@ -547,18 +540,6 @@ class Router
                 $this->pending_group_middleware ?? [],
                 $this->normalizeMiddleware($middleware)
             );
-            return $this;
-        }
-
-        // Apply to all routes created by any()
-        if (!empty($this->any_routes)) {
-            foreach ($this->any_routes as $route_data) {
-                $route = $route_data['route']->withMiddleware($middleware);
-                $this->routes[$route_data['index']] = $route;
-                $this->pattern_index[$this->buildIndexKey($route->method, $route->pattern)] = $route;
-            }
-            $this->indices_built = false;
-            $this->any_routes = [];
             return $this;
         }
 
@@ -837,18 +818,6 @@ class Router
             $this->validateConstraint($param, $pattern);
         }
 
-        // Apply to all routes created by any()
-        if (!empty($this->any_routes)) {
-            foreach ($this->any_routes as $route_data) {
-                $route = $route_data['route']->where($param, $pattern);
-                $this->routes[$route_data['index']] = $route;
-                $this->pattern_index[$this->buildIndexKey($route->method, $route->pattern)] = $route;
-            }
-            $this->indices_built = false;
-            $this->any_routes = [];
-            return $this;
-        }
-
         $this->last_route = $this->last_route->where($param, $pattern);
         $this->replaceLastRoute($this->last_route);
 
@@ -898,19 +867,6 @@ class Router
     {
         if ($this->last_route === null) {
             throw new RuntimeException(self::NO_ROUTE_DEFINED);
-        }
-
-        // Apply to all routes created by any()
-        if (!empty($this->any_routes)) {
-            foreach ($this->any_routes as $route_data) {
-                $route = $route_data['route']->withName($name);
-                $this->routes[$route_data['index']] = $route;
-                $this->pattern_index[$this->buildIndexKey($route->method, $route->pattern)] = $route;
-                $this->named_routes[$name] = $route;
-            }
-            $this->indices_built = false;
-            $this->any_routes = [];
-            return $this;
         }
 
         $this->last_route = $this->last_route->withName($name);

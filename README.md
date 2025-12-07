@@ -330,18 +330,6 @@ $routes->any('/api/webhook', [WebhookController::class, 'handle']);
 
 // With specific methods array
 $routes->any('/api/data', [DataController::class, 'process'], ['GET', 'POST']);
-
-// With constraints
-$routes->any('/users/{id}', [UserController::class, 'process'])
-    ->where('id', '\d+');
-
-// With middleware (applies to all methods)
-$routes->any('/admin/action', [AdminController::class, 'handle'])
-    ->middleware(AuthMiddleware::class);
-
-// With route naming (all methods share the same name)
-$routes->any('/process', [ProcessController::class, 'run'])
-    ->name('process.run');
 ```
 
 **Custom method filtering:**
@@ -356,7 +344,8 @@ $routes->any('/api/resource', $action, ['get', 'post', 'put']);
 $routes->any('/test', $action, ['GET', 'INVALID']);  // Only registers GET
 ```
 
-**When called with `where()`, `middleware()`, or `name()`**, the configuration applies to all routes created by `any()`.
+**Important note about chaining:**
+The `any()` method creates multiple routes (one per HTTP method). When you chain `where()`, `name()`, or `middleware()` after `any()`, the configuration only applies to the last route created (HEAD). To apply configuration to all methods, use route groups or define routes individually.
 
 #### Action Types
 

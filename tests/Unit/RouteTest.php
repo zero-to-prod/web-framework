@@ -1343,7 +1343,7 @@ class RouteTest extends TestCase
     {
         $received_params = null;
 
-        $routes = Router::for('PUT', '/users/456')
+        $routes = Router::for('HEAD', '/users/456')
             ->any('/users/{id}', function (array $params) use (&$received_params) {
                 $received_params = $params;
             })
@@ -1359,7 +1359,7 @@ class RouteTest extends TestCase
     {
         $executed = false;
 
-        $routes = Router::for('GET', '/users/abc')
+        $routes = Router::for('HEAD', '/users/abc')
             ->any('/users/{id}', function () use (&$executed) {
                 $executed = true;
             })
@@ -1397,12 +1397,12 @@ class RouteTest extends TestCase
     /** @test */
     public function any_route_with_named_route(): void
     {
-        $routes = Router::for('GET', '/users/789')
+        $routes = Router::for('HEAD', '/users/789')
             ->any('/users/{id}', function () {
             })
             ->name('users.any');
 
-        $route = $routes->matchRoute('GET', '/users/789');
+        $route = $routes->matchRoute('HEAD', '/users/789');
 
         $this->assertEquals('users.any', $route->name);
     }
